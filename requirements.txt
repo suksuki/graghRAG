@@ -1,0 +1,36 @@
+# GraphRAG Platform - Python dependencies
+# Install: pip install -r requirements.txt
+
+# API
+fastapi>=0.109.0,<1.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.6
+
+# Config & env
+pydantic>=2.0
+pydantic-settings>=2.0
+
+# LlamaIndex
+llama-index-core>=0.10.0
+llama-index-llms-ollama>=0.2.0
+llama-index-embeddings-ollama>=0.2.0
+llama-index-graph-stores-neo4j>=0.2.0
+llama-index-vector-stores-postgres>=0.2.0
+llama-index-readers-file>=0.1.0
+
+# Databases
+neo4j>=5.14.0
+psycopg2-binary>=2.9.0
+
+# HTTP client (settings test, Ollama)
+httpx>=0.26.0
+
+# Async in background threads
+nest-asyncio>=1.6.0
+
+# Task queue & Redis
+celery>=5.4.0
+redis>=5.0.0
+
+# Optional: document parsing (unstructured etc. pulled by llama-index-readers-file)
+# If you need specific file types, ensure corresponding extras are installed.
