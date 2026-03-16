@@ -46,23 +46,32 @@ class QueryPipeline:
         return "fact_lookup"
 
     def choose_strategy(self, intent: str, mode: str | None = None) -> str:
-        # 显式模式优先
-        if mode in ("vector", "graph", "hybrid"):
+        """
+        选择检索策略：
+          - 若用户显式指定 vector/graph，则严格遵守；
+          - 若用户指定 hybrid 或未指定，则根据意图自动选择，优先走「快路径」：
+              * greeting            -> graph_only（简单问候，用主模型快速回一句）
+              * relationship_query  -> graph_only（确实需要图）
+              * document_search     -> vector_only（只查哪篇文档，向量足够）
+              * fact_lookup         -> vector_only（默认事实问答优先走向量）
+        """
+        # 显式模式优先（vector / graph）
+        if mode in ("vector", "graph"):
             return {
                 "vector": "vector_only",
                 "graph": "graph_only",
-                "hybrid": "hybrid",
             }[mode]
 
-        # 根据意图自动选择
+        # hybrid 或 None 视为自动模式，根据意图选择
         if intent == "greeting":
             return "graph_only"
         if intent == "relationship_query":
             return "graph_only"
-        if intent == "document_search":
+        if intent in ("document_search", "fact_lookup"):
             return "vector_only"
-        # 默认：事实问答走混合检索
-        return "hybrid"
+
+        # 兜底：未知意图仍走向量优先
+        return "vector_only"
 
     # ------------------------- Retrieval layer -------------------------
     def vector_retrieval(self, query: str):

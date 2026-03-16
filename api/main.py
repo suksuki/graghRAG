@@ -8,6 +8,7 @@ from api.deps import ingestor, graph_engine, vector_engine  # re-export for test
 from api.routes.query_routes import router as query_router
 from api.routes.settings_routes import router as settings_router
 from api.routes.ingestion_routes import router as ingestion_router
+from api.routes.graph_routes import router as graph_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -29,6 +30,7 @@ app.add_middleware(
 app.include_router(query_router)
 app.include_router(settings_router)
 app.include_router(ingestion_router)
+app.include_router(graph_router)
 
 
 @app.get("/")

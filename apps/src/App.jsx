@@ -2,14 +2,15 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Send, Upload, Share2, Database, Network, Search, FileText, Image as ImageIcon, CheckCircle, Loader2, Languages, Trash2, Settings as SettingsIcon, Activity, Zap, Clock, User } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
-import ForceGraph2D from 'react-force-graph-2d';
 import axios from 'axios';
 import './App.css';
+import GraphExplorer from './pages/GraphExplorer.jsx';
 
 const App = () => {
     const { t, i18n } = useTranslation();
     const [activeTab, setActiveTab] = useState('chat'); // chat, graph, docs, settings
     const [query, setQuery] = useState('');
+    const [queryMode, setQueryMode] = useState('vector'); // vector | graph | hybrid
     const [messages, setMessages] = useState([{ role: 'assistant', text: t('welcome') }]);
     const [loading, setLoading] = useState(false);
 
@@ -134,7 +135,7 @@ const App = () => {
         setQuery('');
         setLoading(true);
         try {
-            const res = await axios.post('/api/query', { query, mode: 'hybrid' });
+            const res = await axios.post('/api/query', { query, mode: queryMode });
             setMessages(prev => [...prev, { role: 'assistant', text: res.data.answer, sources: res.data.sources }]);
         } catch (e) {
             setMessages(prev => [...prev, { role: 'assistant', text: t('error_query') }]);
@@ -315,10 +316,25 @@ const App = () => {
                                 <div ref={chatEndRef} />
                             </section>
                             <footer className="chat-footer">
-                                <form className="input-container glass" onSubmit={handleQuery}>
-                                    <input value={query} onChange={e => setQuery(e.target.value)} placeholder={t('placeholder')} />
-                                    <button type="submit" className="send-btn"><Send size={18} /></button>
-                                </form>
+                                <div className="chat-controls">
+                                    <div className="mode-select glass" style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
+                                        <Search size={14} />
+                                        <span style={{ opacity: 0.8 }}>{t('query_mode') || '查询模式'}</span>
+                                        <select
+                                            value={queryMode}
+                                            onChange={(e) => setQueryMode(e.target.value)}
+                                            style={{ background: 'transparent', borderRadius: '6px', border: '1px solid rgba(148, 163, 184, 0.8)', padding: '2px 8px', fontSize: '12px', color: 'inherit' }}
+                                        >
+                                            <option value="vector">{t('mode_fast') || '快速（向量优先）'}</option>
+                                            <option value="hybrid">{t('mode_smart') || '智能（自动选择）'}</option>
+                                            <option value="graph">{t('mode_graph') || '图模式（关系更强）'}</option>
+                                        </select>
+                                    </div>
+                                    <form className="input-container glass" onSubmit={handleQuery}>
+                                        <input value={query} onChange={e => setQuery(e.target.value)} placeholder={t('placeholder')} />
+                                        <button type="submit" className="send-btn"><Send size={18} /></button>
+                                    </form>
+                                </div>
                             </footer>
                         </div>
                     )}
@@ -330,7 +346,7 @@ const App = () => {
                                 <div style={{ opacity: 0.85 }}>{t('graph_overview_desc')}</div>
                             </div>
                             <div style={{ flex: 1, minHeight: 0 }}>
-                                <ForceGraph2D graphData={graphData} nodeAutoColorBy="label" backgroundColor="#0f172a" />
+                                <GraphExplorer />
                             </div>
                         </div>
                     )}

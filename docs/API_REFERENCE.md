@@ -147,15 +147,18 @@ curl -X POST http://localhost:8000/upload \
 ```json
 {
   "query": "What is the secret password for project Antigravity?",
-  "mode": "hybrid"
+  "mode": "vector"
 }
 ```
 
 - `query`：用户问题文本。
-- `mode`：
-  - `"hybrid"`：图 + 向量混合（推荐默认）。
-  - `"graph"`：仅知识图谱。
-  - `"vector"`：仅向量检索。
+- `mode`（可选）：
+  - `"vector"`：**快速模式（向量优先）**。只走向量检索，响应速度最快，适合大多数事实问答与内容查找。
+  - `"graph"`：**图模式（关系更强）**。只走知识图谱检索，适合实体关系/路径等需要图结构的场景。
+  - `"hybrid"`：**智能模式（自动选择）**。后端根据意图自动在向量/图之间选“快路径”或“图路径”：
+    - 问候/关系问题 → 优先走图（`graph_only`）
+    - 文档搜索/事实查找 → 优先走向量（`vector_only`）
+  - 未传 `mode` 时：等价于“智能模式”，但后端仍会**优先选择向量检索**以保证默认性能。
 
 ### 响应体 `QueryResponse`
 

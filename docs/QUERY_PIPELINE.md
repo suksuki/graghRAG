@@ -85,26 +85,35 @@ def detect_query_intent(self, query: str) -> str:
 
 ```python
 def choose_strategy(self, intent: str, mode: str | None = None) -> str:
-    # 显式模式优先
-    if mode in ("vector", "graph", "hybrid"):
+    """
+    选择检索策略：
+      - 若用户显式指定 vector/graph，则严格遵守；
+      - 若用户指定 hybrid 或未指定，则根据意图自动选择，优先走「快路径」：
+          * greeting            -> graph_only（简单问候，用主模型快速回一句）
+          * relationship_query  -> graph_only（确实需要图）
+          * document_search     -> vector_only（只查哪篇文档，向量足够）
+          * fact_lookup         -> vector_only（默认事实问答优先走向量）
+    """
+    # 显式模式优先（vector / graph）
+    if mode in ("vector", "graph"):
         return {
             "vector": "vector_only",
             "graph": "graph_only",
-            "hybrid": "hybrid",
         }[mode]
 
-    # 根据意图自动选择
+    # hybrid 或 None 视为自动模式，根据意图选择
     if intent == "greeting":
         return "graph_only"
     if intent == "relationship_query":
         return "graph_only"
-    if intent == "document_search":
+    if intent in ("document_search", "fact_lookup"):
         return "vector_only"
-    # 默认：事实问答走混合检索
-    return "hybrid"
+
+    # 兜底：未知意图仍走向量优先
+    return "vector_only"
 ```
 
-### 三种检索模式
+### 三种检索模式（后端策略）
 
 - **`vector_only`**：
   - 仅调用向量检索（`VectorEngine`）。
@@ -117,6 +126,34 @@ def choose_strategy(self, intent: str, mode: str | None = None) -> str:
 - **`hybrid`**：
   - 同时调用图检索与向量检索。
   - 当前实现中由 `rerank` 和 `llm_synthesis` 决定答案优先级（图优先，向量为后备）。
+
+---
+
+### 前端查询模式与后端 `mode` 对应关系
+
+在知识库 UI 中，用户可以在输入框上方选择「查询模式」，其与后端 `mode` 字段的对应关系如下：
+
+- **快速模式（向量优先）**：
+  - 前端：`queryMode = "vector"`
+  - 请求体：`{ "query": "...", "mode": "vector" }`
+  - 后端：`choose_strategy` 固定走 `vector_only`。
+  - 适合：大多数**普通问答 / 事实查找 / 内容检索**场景，响应速度最快。
+
+- **智能模式（自动选择）**：
+  - 前端：`queryMode = "hybrid"`
+  - 请求体：`{ "query": "...", "mode": "hybrid" }`
+  - 后端：视作“自动模式”，根据 `detect_query_intent` 的结果选择：
+    - `greeting` / `relationship_query` → `graph_only`
+    - `document_search` / `fact_lookup` → `vector_only`
+  - 适合：不想手动选模式，交给系统根据意图决定「快路径 or 图路径」。
+
+- **图模式（关系更强）**：
+  - 前端：`queryMode = "graph"`
+  - 请求体：`{ "query": "...", "mode": "graph" }`
+  - 后端：`choose_strategy` 固定走 `graph_only`。
+  - 适合：**实体关系分析、谁和谁有关系、图谱解释**等显式需要图结构的场景。
+
+> 注意：若前端不传 `mode` 字段，后端等价于收到 `mode=None`，会走「自动模式」，但仍根据意图**优先选择向量检索**，以保证默认体验较快。
 
 ---
 
