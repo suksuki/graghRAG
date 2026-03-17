@@ -19,11 +19,24 @@ logger = logging.getLogger(__name__)
 
 class GraphEngine:
     def __init__(self):
-        # 主模型：对话 / 查询
+        # 主模型：对话 / 查询。显式 context_window 避免 client.show() 冷启动；thinking=False 去掉思考输出以降低延迟。
+        _ctx = getattr(settings, "LLM_NUM_CTX", None) or 2048
+        _num_predict = getattr(settings, "LLM_NUM_PREDICT", None) or 64
+        _ollama_kw = {
+            "request_timeout": settings.REQUEST_TIMEOUT,
+            "context_window": _ctx,
+            "additional_kwargs": {
+                "num_ctx": _ctx,
+                "num_predict": _num_predict,
+                "temperature": 0,
+            },
+            "keep_alive": "30m",
+            "thinking": False,  # 禁用 thinking 输出，首字更快、无干扰
+        }
         self.llm = Ollama(
             model=settings.LLM_MODEL,
             base_url=settings.OLLAMA_BASE_URL,
-            request_timeout=settings.REQUEST_TIMEOUT
+            **_ollama_kw
         )
         # 抽取模型：图谱实体关系抽取（用小模型，快很多）
         # 使用较短超时，避免单块卡住导致“图索引一直卡着”

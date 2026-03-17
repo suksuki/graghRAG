@@ -15,6 +15,8 @@ class QueryResponse(BaseModel):
     answer: str
     sources: List[Dict[str, Any]]
     graph_context: Optional[List[str]] = None
+    # 可选：pipeline 各阶段耗时（ms），便于在 UI 显示或排查瓶颈
+    pipeline_latency_ms: Optional[Dict[str, Any]] = None
 
 
 class TestRequest(BaseModel):

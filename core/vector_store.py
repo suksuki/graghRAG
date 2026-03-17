@@ -19,6 +19,41 @@ from configs.config import settings
 
 logger = logging.getLogger(__name__)
 
+# 用于统计单次 query 的 embedding 调用次数（调试用）
+_embed_call_count: int = 0
+
+
+def _reset_embed_call_count() -> None:
+    global _embed_call_count
+    _embed_call_count = 0
+
+
+def _get_embed_call_count() -> int:
+    return _embed_call_count
+
+
+class EmbeddingCallLogger(OllamaEmbedding):
+    """包装 OllamaEmbedding，对每次实际 API 调用打日志并计数，便于排查重复 embedding。"""
+
+    def _get_query_embedding(self, query: str):
+        global _embed_call_count
+        _embed_call_count += 1
+        logger.info("[EmbedCall] get_query_embedding (count=%s)", _embed_call_count)
+        return super()._get_query_embedding(query)
+
+    def _get_text_embedding(self, text: str):
+        global _embed_call_count
+        _embed_call_count += 1
+        logger.info("[EmbedCall] get_text_embedding (count=%s)", _embed_call_count)
+        return super()._get_text_embedding(text)
+
+    def _get_text_embeddings(self, texts: list):
+        global _embed_call_count
+        n = len(texts)
+        _embed_call_count += n
+        logger.info("[EmbedCall] get_text_embeddings batch size=%s (count total=%s)", n, _embed_call_count)
+        return super()._get_text_embeddings(texts)
+
 
 def _model_to_table_suffix(model_name: str) -> str:
     """
@@ -82,15 +117,35 @@ def _drop_table(full_table_name: str):
 
 class VectorEngine:
     def __init__(self):
+        _ctx = getattr(settings, "LLM_NUM_CTX", None) or 2048
+        _num_predict = getattr(settings, "LLM_NUM_PREDICT", None) or 64
+        _ollama_kw = {
+            "request_timeout": settings.REQUEST_TIMEOUT,
+            "context_window": _ctx,
+            "additional_kwargs": {
+                "num_ctx": _ctx,
+                "num_predict": _num_predict,
+                "temperature": 0,
+            },
+            "keep_alive": "30m",
+            "thinking": False,
+        }
         self.llm = Ollama(
             model=settings.LLM_MODEL,
             base_url=settings.OLLAMA_BASE_URL,
-            request_timeout=settings.REQUEST_TIMEOUT
+            **_ollama_kw
         )
-        self.embed_model = OllamaEmbedding(
+        _client_kwargs = getattr(settings, "REQUEST_TIMEOUT", None)
+        _client_kwargs = {"timeout": _client_kwargs} if _client_kwargs is not None else {}
+        self._embed_model_raw = OllamaEmbedding(
             model_name=settings.EMBEDDING_MODEL,
             base_url=settings.OLLAMA_BASE_URL,
-            request_timeout=settings.REQUEST_TIMEOUT
+            client_kwargs=_client_kwargs,
+        )
+        self.embed_model = EmbeddingCallLogger(
+            model_name=settings.EMBEDDING_MODEL,
+            base_url=settings.OLLAMA_BASE_URL,
+            client_kwargs=_client_kwargs,
         )
         Settings.llm = self.llm
         Settings.embed_model = self.embed_model
@@ -132,7 +187,7 @@ class VectorEngine:
         VectorStoreIndex(
             nodes,
             storage_context=self.storage_context,
-            embed_model=self.embed_model,
+            embed_model=self._embed_model_raw,
             show_progress=True
         )
 
@@ -158,10 +213,18 @@ class VectorEngine:
                 logger.debug(f"Delete with col='{col}' failed: {e}")
         return 0
 
-    def get_query_engine(self):
-        """返回针对当前向量表的检索引擎。"""
+    def get_retriever(self, similarity_top_k: int = 5):
+        """返回仅做向量检索的 retriever（一次 query 只触发 1 次 query embedding）。"""
         index = VectorStoreIndex.from_vector_store(
             vector_store=self.vector_store,
-            embed_model=self.embed_model
+            embed_model=self.embed_model,
         )
-        return index.as_query_engine()
+        return index.as_retriever(similarity_top_k=similarity_top_k)
+
+    def get_query_engine(self):
+        """返回针对当前向量表的检索引擎（仅用于兼容；推荐用 get_retriever + 自研 synthesis）。"""
+        index = VectorStoreIndex.from_vector_store(
+            vector_store=self.vector_store,
+            embed_model=self.embed_model,
+        )
+        return index.as_query_engine(similarity_top_k=5)

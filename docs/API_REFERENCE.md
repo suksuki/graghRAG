@@ -79,6 +79,11 @@ curl -X POST http://localhost:8000/upload \
 }
 ```
 
+### 相关接口
+
+- **`GET /graph/overview`**：图谱总览（节点数、关系数、按类型统计、代表实体）。若 Neo4j 尚无节点则返回空统计，前端显示「暂无图谱统计数据」。
+- **`GET /graph/suggested_questions`**：基于图中关系生成的推荐问题列表（如 "How is A related to B?"）。若图中无关系则返回空列表，前端显示「暂时没有推荐问题」。
+
 ---
 
 ## 4. 摄取状态 `GET /ingestion/status`
@@ -177,6 +182,24 @@ curl -X POST http://localhost:8000/upload \
 
 ---
 
+## 6.1 流式查询 `POST /query/stream`
+
+- **Purpose**：与 `POST /query` 逻辑一致，但以 NDJSON 流返回，便于首字即显与延迟指标展示。
+- **Content-Type**：请求 `application/json`；响应 `application/x-ndjson`（每行一个 JSON 对象）。
+
+### 请求体
+
+同 `QueryRequest`：`{ "query": "...", "mode": "vector" | "graph" | "hybrid" }`。
+
+### 响应流（NDJSON）
+
+- **chunk 事件**：`{"type": "chunk", "text": "..."}`，仅包含最终回答文本（thinking 已过滤）。
+- **done 事件**：`{"type": "done", "answer": "...", "sources": [...], "pipeline_latency_ms": {...}, "first_token_ms": 200, "total_ms": 1500}`。
+  - `pipeline_latency_ms` 包含：`planner_ms`、`vector_retrieval_ms`、`graph_retrieval_ms`、`traversal_ms`、`llm_generation_ms`、`total_ms`、`first_token_ms`、`prompt_chars`、`prompt_tokens`（可选 `cache_hit`）。
+- **error 事件**：`{"type": "error", "detail": "..."}`。
+
+---
+
 ## 7. 获取系统配置 `GET /settings`
 
 - **Purpose**：读取当前后端使用的模型和基础连接信息。
@@ -185,7 +208,7 @@ curl -X POST http://localhost:8000/upload \
 
 ```json
 {
-  "llm_model": "qwen3.5:35b",
+  "llm_model": "qwen2.5:7b",
   "extraction_model": "qwen2.5:7b",
   "embedding_model": "bge-m3:latest",
   "embedding_dim": 1024,
@@ -194,6 +217,8 @@ curl -X POST http://localhost:8000/upload \
   "postgres_host": "localhost"
 }
 ```
+
+- 实际使用的模型由设置页或 `.env` 决定；`llm_model` 默认可为 `qwen2.5:7b`，首字延迟高时可改为 `qwen2.5:3b` 等。
 
 ---
 
@@ -244,14 +269,14 @@ curl -X POST http://localhost:8000/upload \
 
 ```json
 {
-  "llm_model": "qwen3.5:35b",
+  "llm_model": "qwen2.5:7b",
   "extraction_model": "qwen2.5:7b",
   "embedding_model": "bge-m3:latest",
   "ollama_base_url": "http://localhost:11434"
 }
 ```
 
-- 不必包含所有字段，缺省字段将沿用原值。
+- 不必包含所有字段，缺省字段将沿用原值。可选：`.env` 中可设置 `LLM_NUM_CTX`（如 2048）、`LLM_NUM_PREDICT`（如 64）以控制上下文与生成长度，详见 `docs/OPTIMIZATION_LLM_LATENCY.md`。
 - 若 `embedding_model` 或 `ollama_base_url` 发生变化，后端会尝试调用 Ollama `/api/embed` 自动探测新模型的向量维度并写入 `EMBEDDING_DIM`。
 
 ### 响应
@@ -282,13 +307,15 @@ curl -X POST http://localhost:8000/upload \
 以上接口构成了 GraphRAG 平台的主要 API 面，分别覆盖：
 
 - 文档生命周期：上传 / 列表 / 删除。
-- 图谱与摄取进度：图数据、摄取状态。
-- 问答能力：基于 GraphRAG v2 的 `/query`。
+- 图谱与摄取进度：图数据、摄取状态、图谱概览（`/graph/overview`）、推荐问题（`/graph/suggested_questions`）。
+- 问答能力：基于 GraphRAG v2 的 `/query` 与流式 `/query/stream`。
 - 系统配置：读取 / 测试连接 / 更新模型配置。
 
 更多细节可参考：
 
 - `docs/INGESTION_PIPELINE.md`
 - `docs/QUERY_PIPELINE.md`
+- `docs/OPTIMIZATION_LLM_LATENCY.md`
 - `docs/DEPLOYMENT.md`
+- `docs/CHANGELOG.md`
 

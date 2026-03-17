@@ -343,3 +343,22 @@ def run(self, query: str, mode: str = "hybrid") -> Dict[str, Any]:
 - 引入 BM25 / 关键字检索作为额外检索通道。
 - 替换或增强重排策略，而不影响 API 与控制器代码。
 
+---
+
+## 10. 流式查询：`run_stream(query, mode)`
+
+对外入口：`POST /query/stream`，返回 NDJSON 流。
+
+- **事件类型**：
+  - `{"type": "chunk", "text": "..."}`：每收到 LLM 一段正文即推送，仅包含最终回答文本（thinking 已在后端过滤）。
+  - `{"type": "done", "answer", "sources", "pipeline_latency_ms", "first_token_ms", "total_ms"}`：结束事件，包含完整答案、来源及延迟指标。
+
+- **延迟指标**（`pipeline_latency_ms`）：
+  - `planner_ms`、`vector_retrieval_ms`、`graph_retrieval_ms`、`traversal_ms`、`llm_generation_ms`、`total_ms`、`first_token_ms`；
+  - `prompt_chars`、`prompt_tokens`（约 `chars//2`），用于排查 prefill 与首字延迟。
+
+- **上下文与 Prompt 限制**（与延迟优化一致）：
+  - **ContextBuilder**：`MAX_CONTEXT_CHUNKS=3`、`MAX_CHARS_PER_CHUNK=150`、`MAX_TOTAL_CHARS=800`，单句截断。
+  - **PromptBuilder**：极简系统提示（Answer directly. No reasoning. Max 2 sentences.），结尾为「Answer:」。
+  - Ollama 主模型：`num_ctx`、`num_predict`（如 64）、`temperature=0`、`thinking=False`，由 `core/graph_engine.py` 与 `core/vector_store.py` 在初始化时传入。
+

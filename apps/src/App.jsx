@@ -134,14 +134,61 @@ const App = () => {
     const handleQuery = async (e) => {
         e.preventDefault();
         if (!query.trim() || loading) return;
-        setMessages(prev => [...prev, { role: 'user', text: query }]);
+        const userQuery = query;
+        setMessages(prev => [...prev, { role: 'user', text: userQuery }]);
         setQuery('');
         setLoading(true);
         try {
-            const res = await axios.post('/api/query', { query, mode: queryMode });
-            setMessages(prev => [...prev, { role: 'assistant', text: res.data.answer, sources: res.data.sources }]);
+            const res = await fetch('/api/query/stream', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ query: userQuery, mode: queryMode }),
+            });
+            if (!res.ok) throw new Error(res.statusText);
+            setMessages(prev => [...prev, { role: 'assistant', text: '', sources: null, pipeline_latency_ms: null }]);
+            const reader = res.body.getReader();
+            const dec = new TextDecoder();
+            let buffer = '';
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+                buffer += dec.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || '';
+                for (const line of lines) {
+                    if (!line.trim()) continue;
+                    try {
+                        const event = JSON.parse(line);
+                        if (event.type === 'chunk' && event.text && !event.thinking) {
+                            setMessages(prev => {
+                                const next = [...prev];
+                                const last = next[next.length - 1];
+                                if (last && last.role === 'assistant') next[next.length - 1] = { ...last, text: (last.text || '') + event.text };
+                                return next;
+                            });
+                        } else if (event.type === 'done') {
+                            const lat = event.pipeline_latency_ms || {};
+                            if (event.first_token_ms != null) lat.first_token_ms = event.first_token_ms;
+                            if (event.total_ms != null) lat.total_ms = event.total_ms;
+                            setMessages(prev => {
+                                const next = [...prev];
+                                const last = next[next.length - 1];
+                                if (last && last.role === 'assistant') next[next.length - 1] = { ...last, text: event.answer ?? last.text, sources: event.sources ?? last.sources, pipeline_latency_ms: lat };
+                                return next;
+                            });
+                        } else if (event.type === 'error') {
+                            setMessages(prev => {
+                                const next = [...prev];
+                                const last = next[next.length - 1];
+                                if (last && last.role === 'assistant') next[next.length - 1] = { ...last, text: (last.text || '') + '\n[错误] ' + (event.detail || '') };
+                                return next;
+                            });
+                        }
+                    } catch (_) { /* skip malformed line */ }
+                }
+            }
         } catch (e) {
-            setMessages(prev => [...prev, { role: 'assistant', text: t('error_query') }]);
+            setMessages(prev => [...prev, { role: 'assistant', text: t('error_query') + ' ' + (e.message || '') }]);
         } finally { setLoading(false); }
     };
 
@@ -327,6 +374,25 @@ const App = () => {
                                                             </span>
                                                         ))}
                                                     </div>
+                                                </div>
+                                            )}
+                                            {msg.pipeline_latency_ms && (
+                                                <div className="pipeline-latency" style={{ marginTop: '8px', paddingTop: '6px', borderTop: '1px solid rgba(255,255,255,0.08)', fontSize: '11px', opacity: 0.85, fontFamily: 'monospace' }}>
+                                                    ⏱ {msg.pipeline_latency_ms.cache_hit
+                                                        ? `缓存命中 ${msg.pipeline_latency_ms.total_ms}ms`
+                                                        : [
+                                                            msg.pipeline_latency_ms.first_token_ms != null && `首字 ${(msg.pipeline_latency_ms.first_token_ms / 1000).toFixed(1)}s`,
+                                                            `planner ${msg.pipeline_latency_ms.planner_ms}ms`,
+                                                            `vector ${msg.pipeline_latency_ms.vector_retrieval_ms}ms`,
+                                                            `graph ${msg.pipeline_latency_ms.graph_retrieval_ms || 0}ms`,
+                                                            `LLM ${((msg.pipeline_latency_ms.llm_generation_ms || 0) / 1000).toFixed(1)}s`,
+                                                            `总 ${((msg.pipeline_latency_ms.total_ms || 0) / 1000).toFixed(1)}s`,
+                                                          ].filter(Boolean).join(' · ')}
+                                                    {(msg.pipeline_latency_ms.prompt_chars != null || msg.pipeline_latency_ms.prompt_tokens != null) && (
+                                                        <div style={{ marginTop: '4px', opacity: 0.75 }}>
+                                                            Prompt: {msg.pipeline_latency_ms.prompt_chars ?? 0} 字符{msg.pipeline_latency_ms.prompt_tokens != null ? ` · ~${msg.pipeline_latency_ms.prompt_tokens} token` : ''}
+                                                        </div>
+                                                    )}
                                                 </div>
                                             )}
                                         </div>

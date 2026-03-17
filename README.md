@@ -116,7 +116,9 @@ docker compose up -d
 | 变量 | 说明 | 默认 |
 |------|------|------|
 | `OLLAMA_BASE_URL` | Ollama 服务地址 | `http://192.168.0.10:11434` |
-| `LLM_MODEL` | 对话/查询用模型 | `qwen3.5:35b` |
+| `LLM_MODEL` | 对话/查询用模型（可由设置页覆盖） | `qwen2.5:7b` |
+| `LLM_NUM_CTX` | Ollama 上下文长度上限（首字/prefill 优化） | `1024`（代码默认 2048） |
+| `LLM_NUM_PREDICT` | 单次生成最大 token 数 | `64` |
 | `EXTRACTION_MODEL` | 图谱实体抽取用模型 | `qwen2.5:7b` |
 | `EXTRACTION_TIMEOUT` | 单次抽取请求超时（秒），避免图索引“卡住” | `120` |
 | `EMBEDDING_MODEL` | 向量化模型 | `bge-m3:latest` |
@@ -125,6 +127,8 @@ docker compose up -d
 | `POSTGRES_HOST` / `POSTGRES_PORT` / `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | PostgreSQL 连接 | - |
 | `DATA_RAW_DIR` | 上传文档存放目录 | 项目根目录下 `data/raw` |
 | `GRAPHRAG_ENV_FILE` | 可选，指定 .env 路径 | 项目根目录下 `.env` |
+
+首字/LLM 延迟优化说明见：`docs/OPTIMIZATION_LLM_LATENCY.md`。
 
 ## 端口说明
 
@@ -190,8 +194,10 @@ make test-integration
 
 - **架构说明**：`docs/ARCHITECTURE.md`
 - **API 参考**：`docs/API_REFERENCE.md`
+- **变更记录**：`docs/CHANGELOG.md`
 - **摄取流水线**：`docs/INGESTION_PIPELINE.md`
 - **查询流水线（GraphRAG v2）**：`docs/QUERY_PIPELINE.md`
+- **首字/LLM 延迟优化**：`docs/OPTIMIZATION_LLM_LATENCY.md`
 - **部署指南**：`docs/DEPLOYMENT.md`
 - **测试体系**：`docs/TESTING.md`
 
@@ -208,19 +214,6 @@ make test-integration
 ├── Dockerfile
 ├── docker-compose.yml
 └── README.md
-```
-
-## 测试
-
-```bash
-# 全部测试（部分用例依赖真实 Ollama/Neo4j/Postgres）
-make test
-
-# 仅单元测试（API + 引擎，可配合 mock 不依赖外部服务）
-make test-unit
-
-# 集成测试（上传→摄取→查询）
-make test-integration
 ```
 
 ## 安全与限制

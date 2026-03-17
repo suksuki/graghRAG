@@ -13,7 +13,22 @@ class QueryPlanner:
     - 不直接执行任何检索，仅返回 plan dict
     """
 
+    # 定义类查询：仅需向量检索，无需图遍历（Short Circuit）
+    DEFINITION_PATTERNS = ("what is", "define", "explain", "who is")
+    # 关系类关键词：含其一则视为可能的关系问句，跳过 Short Circuit，不做实体抽取
+    RELATION_HINTS = ("related to", "between", "relationship", "connection", "difference between")
+
     def plan(self, query: str) -> Dict:
+        q = (query or "").strip().lower()
+        # Short Circuit 仅当「定义类句式」且非关系问句且实体数 ≤1
+        if any(q.startswith(p) for p in self.DEFINITION_PATTERNS):
+            if any(h in q for h in self.RELATION_HINTS):
+                pass  # 很可能是关系问题，走完整规划
+            else:
+                entities = self._extract_entities(query)
+                if len(entities) <= 1:
+                    return {"intent": "fact_lookup", "strategy": "vector_only", "entities": entities}
+
         intent = self._detect_intent(query)
         strategy = self._map_intent_to_strategy(intent)
         entities = self._extract_entities(query)

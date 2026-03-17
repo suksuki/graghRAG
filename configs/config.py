@@ -44,11 +44,13 @@ class Settings(BaseSettings):
 
     # LLM Settings
     OLLAMA_BASE_URL: str = "http://192.168.0.10:11434"
-    LLM_MODEL: str = "qwen3.5:35b"           # 用于对话/查询的主模型
+    LLM_MODEL: str = "qwen2.5:7b"            # 用于对话/查询的主模型（可由设置页或 .env 覆盖）；首字延迟高时可改为 qwen2.5:3b
+    LLM_NUM_CTX: Optional[int] = 1024        # Ollama 上下文长度上限，越小 prefill 越快（当前 prompt 约 400–500 token）
+    LLM_NUM_PREDICT: int = 64                # 单次生成最大 token 数，降低 decode 时间，目标 2–3 句
     EXTRACTION_MODEL: str = "qwen2.5:7b"     # 用于图谱实体抽取的专用小模型（越小越快）
     EMBEDDING_MODEL: str = "bge-m3:latest"
     EMBEDDING_DIM: int = 1024  # 由保存配置时自动检测写入，不需手动修改
-    REQUEST_TIMEOUT: float = 1200.0  # 20 minutes for heavy 35B graph extractions
+    REQUEST_TIMEOUT: float = 1200.0  # 长超时，供大模型或重图抽取使用
     EXTRACTION_TIMEOUT: float = 120.0  # 单次抽取请求超时（秒），避免图索引阶段卡死
     EXTRACTION_NUM_WORKERS: int = 4   # 图抽取并发数，显存允许可调大
     GRAPH_MAX_NODES: int = 30         # 单次摄取最多对多少块做图索引（0=不限制），显著减少 LLM 调用

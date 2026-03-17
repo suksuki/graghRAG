@@ -68,7 +68,7 @@ cd /opt/graphrag-platform
 ---
 
 ## 5. Technical Stack / 技术栈 / 기술 스택
-- **LLM**: Qwen 3.5 35B (Local / 192.168.0.10)
+- **LLM**: 可配置（默认 Qwen 2.5 7B，可选 3B/9B 等，Local 或远程 Ollama）
 - **Framework**: Llama-Index 0.14+
 - **Database**: Neo4j (Graph), PostgreSQL + pgvector (Vector)
 - **Frontend**: React + Vite + Framer Motion (Premium UI)
@@ -79,9 +79,9 @@ cd /opt/graphrag-platform
 ## 6. FAQ / 常见问题 / 자주 묻는 질문
 
 **Q: Why is graph analysis slow? / 为什么图谱分析慢？ / 그래프 분석이 왜 느린가요?**
-- **A**: The system uses a 35B parameter LLM to extract high-quality entities and relationships, ensuring the "Knowledge Graph" is accurate.
-- **CN**: 系统使用 35B 模型进行高质量实体提取，以确保关系图谱的精准度。
-- **KO**: 시스템은 정확한 지식 그래프를 위해 35B 모델을 사용하여 고품질 개체와 관계를 추출합니다.
+- **A**: Graph indexing uses a dedicated extraction model (e.g. 7B) per chunk; many chunks mean many LLM calls. You can reduce chunk count or use a smaller extraction model.
+- **CN**: 图索引进度按块调用抽取模型（如 7B），块数多则耗时长；可调小 CHUNK_SIZE 或使用更小抽取模型。
+- **KO**: 그래프 인덱싱은 청크마다 전용 추출 모델(예: 7B)을 사용하므로, 청크 수가 많으면 시간이 걸립니다. CHUNK_SIZE를 줄이거나 더 작은 모델을 사용할 수 있습니다.
 
 **Q: Can it read handwritten notes? / 能识别手写笔记吗？ / 손글씨 메모도 인식하나요?**
 - **A**: Yes, the built-in OCR handles standard handwriting, though clear printed text yields better results.

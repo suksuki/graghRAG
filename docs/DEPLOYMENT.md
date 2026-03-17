@@ -66,7 +66,9 @@ cp .env.example .env
 
 - **Ollama**
   - `OLLAMA_BASE_URL=http://localhost:11434`
-  - `LLM_MODEL=qwen3.5:35b`（示例，可按需替换）
+  - `LLM_MODEL=qwen2.5:7b`（示例，可按需替换为 qwen3.5:9b、qwen2.5:3b 等）
+  - `LLM_NUM_CTX=2048`（可选，控制上下文与 prefill 速度）
+  - `LLM_NUM_PREDICT=64`（可选，控制生成长度）
   - `EXTRACTION_MODEL=qwen2.5:7b`
   - `EMBEDDING_MODEL=bge-m3:latest`
 
@@ -134,10 +136,12 @@ redis-server
 
 ```bash
 ollama serve &
-ollama pull qwen3.5:35b
 ollama pull qwen2.5:7b
+ollama pull qwen2.5:3b
 ollama pull bge-m3:latest
 ```
+
+（若使用 qwen3.5:9b 等，按 `.env` 中 `LLM_MODEL` 拉取对应模型。）
 
 ---
 
