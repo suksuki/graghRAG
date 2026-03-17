@@ -6,6 +6,10 @@ from api.controllers.graph_controller import (
     subgraph_by_entity_controller,
     path_between_entities_controller,
     node_documents_controller,
+    graph_overview_controller,
+    suggested_questions_controller,
+    entity_types_controller,
+    list_entities_controller,
 )
 
 router = APIRouter(prefix="/graph", tags=["graph"])
@@ -53,4 +57,40 @@ def node_documents(entity: str = Query(..., description="实体名称（name 属
     获取与给定实体相关的文档及文本片段，用于前端文档侧边栏。
     """
     return node_documents_controller(entity=entity, limit=limit)
+
+
+@router.get("/overview")
+def graph_overview():
+    """
+    图谱总览：节点/关系数量、按类型统计、代表实体列表。
+    """
+    return graph_overview_controller()
+
+
+@router.get("/entity_types")
+def entity_types():
+    """
+    返回实体类型列表，用于 Entity Browser 的类型选择。
+    """
+    return entity_types_controller()
+
+
+@router.get("/suggested_questions")
+def suggested_questions(limit: int = Query(10, ge=1, le=50)):
+    """
+    返回一组基于图关系自动生成的推荐问题，帮助用户了解可以问什么。
+    """
+    return suggested_questions_controller(limit=limit)
+
+
+@router.get("/entities")
+def list_entities(
+    type: str = Query(..., description="实体类型（对应节点的第一个 label）"),
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=200),
+):
+    """
+    分页返回指定类型的实体名称列表，用于 Entity Browser。
+    """
+    return list_entities_controller(entity_type=type, page=page, size=size)
 

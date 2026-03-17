@@ -37,10 +37,13 @@ const App = () => {
             }
         };
         window.addEventListener('keydown', handleKeyPress);
+        const openChat = () => setActiveTab('chat');
+        window.addEventListener('graphrag_open_chat', openChat);
 
         return () => {
             clearInterval(timer);
             window.removeEventListener('keydown', handleKeyPress);
+            window.removeEventListener('graphrag_open_chat', openChat);
         };
     }, [i18n.language]);
 
@@ -141,6 +144,23 @@ const App = () => {
             setMessages(prev => [...prev, { role: 'assistant', text: t('error_query') }]);
         } finally { setLoading(false); }
     };
+
+    // 当从 Graph Studio 选择推荐问题时，自动填充并发送
+    useEffect(() => {
+        if (activeTab !== 'chat') return;
+        try {
+            const stored = localStorage.getItem('graphrag_suggested_question');
+            if (stored && stored.trim()) {
+                setQuery(stored);
+                localStorage.removeItem('graphrag_suggested_question');
+                // 模拟一次提交
+                setTimeout(() => {
+                    const fakeEvent = { preventDefault: () => {} };
+                    handleQuery(fakeEvent);
+                }, 0);
+            }
+        } catch (e) { }
+    }, [activeTab]);
 
     const deleteDocument = async (name) => {
         if (!window.confirm(`确定要删除文档 ${name} 吗？`)) return;

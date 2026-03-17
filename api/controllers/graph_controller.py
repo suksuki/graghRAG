@@ -84,6 +84,145 @@ def list_relations_controller(limit: int = 100) -> Dict[str, List[Dict[str, Any]
     return {"nodes": list(nodes.values()), "edges": edges}
 
 
+def graph_overview_controller() -> Dict[str, Any]:
+    """
+    图谱总览信息：节点数、关系数、按类型统计、部分代表实体。
+    """
+    overview: Dict[str, Any] = {}
+    with graph_engine.graph_store._driver.session() as session:  # type: ignore[attr-defined]
+        # 总节点数
+        node_count_result = session.run("MATCH (n) RETURN count(n) AS cnt")
+        overview["node_count"] = node_count_result.single()["cnt"]
+
+        # 总关系数
+        edge_count_result = session.run("MATCH ()-[r]->() RETURN count(r) AS cnt")
+        overview["edge_count"] = edge_count_result.single()["cnt"]
+
+        # 按 label 统计
+        type_rows = session.run(
+            """
+            MATCH (n)
+            WITH labels(n)[0] AS type
+            RETURN type, count(*) AS cnt
+            ORDER BY cnt DESC
+            LIMIT 10
+            """
+        )
+        overview["entity_types"] = [
+            {"type": rec["type"] or "Unknown", "count": rec["cnt"]} for rec in type_rows
+        ]
+
+        # 代表实体（有 name 的节点）
+        top_rows = session.run(
+            """
+            MATCH (n)
+            WHERE exists(n.name)
+            RETURN n.name AS name
+            LIMIT 10
+            """
+        )
+        overview["top_entities"] = [rec["name"] for rec in top_rows]
+
+    return overview
+
+
+def entity_types_controller() -> Dict[str, Any]:
+    """
+    返回按实体类型聚合的统计信息，用于 Entity Browser 顶部的类型列表。
+    """
+    with graph_engine.graph_store._driver.session() as session:  # type: ignore[attr-defined]
+        rows = session.run(
+            """
+            MATCH (n)
+            WHERE exists(n.name)
+            WITH labels(n)[0] AS type
+            RETURN type, count(*) AS cnt
+            ORDER BY cnt DESC
+            LIMIT 20
+            """
+        )
+        types = [
+            {"type": rec["type"] or "Unknown", "count": rec["cnt"]}
+            for rec in rows
+        ]
+    return {"types": types}
+
+
+def suggested_questions_controller(limit: int = 10) -> Dict[str, List[str]]:
+    """
+    根据图中的关系自动生成一组“推荐问题”。
+    """
+    cypher = """
+    MATCH (a)-[r]->(b)
+    WHERE exists(a.name) AND exists(b.name)
+    RETURN a.name AS a_name, type(r) AS rel, b.name AS b_name
+    LIMIT $limit
+    """
+    records = _run_cypher(cypher, {"limit": limit})
+
+    questions: List[str] = []
+    for rec in records:
+        a_name = rec.get("a_name")
+        b_name = rec.get("b_name")
+        if not a_name or not b_name:
+            continue
+        q = f"How is {a_name} related to {b_name}?"
+        questions.append(q)
+
+    # 去重
+    seen = set()
+    uniq: List[str] = []
+    for q in questions:
+        if q not in seen:
+            seen.add(q)
+            uniq.append(q)
+
+    return {"questions": uniq}
+
+
+def list_entities_controller(entity_type: str, page: int = 1, size: int = 20) -> Dict[str, Any]:
+    """
+    分页返回指定类型下的实体名称列表，用于 Entity Browser。
+    """
+    # 简单 label 清洗：只保留字母数字和下划线，避免注入
+    safe_label = "".join(ch for ch in entity_type if ch.isalnum() or ch == "_")
+    if not safe_label:
+        return {"type": entity_type, "page": page, "size": size, "total": 0, "entities": []}
+
+    skip = max(page - 1, 0) * size
+
+    with graph_engine.graph_store._driver.session() as session:  # type: ignore[attr-defined]
+        # 总数
+        count_cypher = f"""
+        MATCH (n:`{safe_label}`)
+        WHERE exists(n.name)
+        RETURN count(n) AS cnt
+        """
+        total = session.run(count_cypher).single()["cnt"]
+
+        if total == 0:
+            return {"type": entity_type, "page": page, "size": size, "total": 0, "entities": []}
+
+        # 当前页
+        page_cypher = f"""
+        MATCH (n:`{safe_label}`)
+        WHERE exists(n.name)
+        RETURN n.name AS name
+        ORDER BY name
+        SKIP $skip
+        LIMIT $size
+        """
+        rows = session.run(page_cypher, skip=skip, size=size)
+        entities = [rec["name"] for rec in rows]
+
+    return {
+        "type": entity_type,
+        "page": page,
+        "size": size,
+        "total": total,
+        "entities": entities,
+    }
+
 def subgraph_by_entity_controller(entity: str, limit: int = 200) -> Dict[str, List[Dict[str, Any]]]:
     """
     以给定实体名称为中心，返回其一阶邻居子图。
