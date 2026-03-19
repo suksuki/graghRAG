@@ -205,7 +205,7 @@ vector_indexed = _get_vector_indexed_files(self.vector_engine)
 
 - 维护两个 LLM：
   - `llm`：主模型，用于图查询等。
-  - `extraction_llm`：专用于实体/关系抽取的小模型。
+  - `extraction_llm`：专用于实体/关系抽取的小模型（受控配置，低上下文低输出）。
 - 使用 `Neo4jPropertyGraphStore` 维护图。
 - `get_indexed_files()` 用于增量跳过已处理文件。
 - `create_index(nodes, num_workers, max_paths_per_chunk)` 用于抽取图结构。
@@ -215,18 +215,24 @@ vector_indexed = _get_vector_indexed_files(self.vector_engine)
 在 `ingest_data` 中：
 
 1. 从 `all_nodes` 中筛选出 `graph_nodes`（`file_name` 在 `new_for_graph` 集合中）。
-2. 按 `GRAPH_MAX_NODES`（可在 `.env` 中配置）裁剪最大处理节点数量，以控制单次图索引耗时。
-3. 根据 `num_graph` 计算批大小 `batch_size`，分批调用：
+2. 在图抽取前执行“高价值节点筛选”：
+   - 文本前缀去重（降低重复块浪费）
+   - 信息密度评分（产品/平台/系统、英文词、行业词、长度）
+   - 仅保留 top-k（当前默认 5）
+3. 按 `GRAPH_MAX_NODES`（可在 `.env` 中配置）裁剪最大处理节点数量，以控制单次图索引耗时（当前强上限 5）。
+4. 根据 `num_graph` 计算批大小 `batch_size`（当前为 1），分批调用：
 
 ```python
-self.graph_engine.create_index(batch)
+self.graph_engine.create_index(batch, num_workers=1, max_paths_per_chunk=2)
 ```
 
-4. 每处理完一批，更新进度：
+5. 每处理完一批，更新进度：
    - `graph_done` / `graph_total`
    - `progress` 百分比（55% ~ 95% 区间）。
 
-5. 所有批次完成后，将总体进度置为 100%，并返回文档与节点数量。
+6. 单批处理设置硬超时（当前 5 秒）：
+   - 超时或异常时跳过该批，避免整个 ingestion 卡死。
+7. 所有批次完成后，将总体进度置为 100%，并返回文档与节点数量。
 
 ---
 

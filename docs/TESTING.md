@@ -177,6 +177,12 @@ source .venv/bin/activate
 pytest -v
 ```
 
+推荐（显示最完整摘要）：
+
+```bash
+pytest -v -ra
+```
+
 或使用 Makefile（如果存在）：
 
 ```bash
@@ -200,6 +206,50 @@ pytest -v -m "not integration"
 ```bash
 pytest -v tests/test_engines.py tests/test_api.py tests/test_integration.py
 ```
+
+### 4.4 分层执行（单元 → 集成 → 回归）
+
+```bash
+# 单元
+pytest -v tests/test_utils.py
+
+# API/引擎集成
+pytest -v tests/test_api.py tests/test_engines.py
+
+# 端到端回归
+pytest -v tests/test_integration.py
+```
+
+### 4.5 关键断言（当前版本）
+
+建议在新增回归用例时覆盖以下契约：
+
+- `run_stream` done 事件必须包含：
+  - `graph.used/relations/count/two_hop/summary`
+  - `debug.graph_used/graph_relations_count/answer_mode/precompute_hit`
+- canonical entity 流程：
+  - `debug.entity_raw`
+  - `debug.entity_canonical`
+  - `debug.entity_used_for_graph`
+
+---
+
+## 6. CI 自动化
+
+仓库已新增 GitHub Actions 工作流：`.github/workflows/tests.yml`。
+
+- **默认（push / pull_request）**：
+  - 执行 `unit-tests`（Hosted runner）
+  - 命令：`pytest -v tests/test_utils.py`
+- **手动触发全量（workflow_dispatch）**：
+  - 勾选 `run_full_stack=true`
+  - 执行 `full-stack-tests`（Self-hosted runner）
+  - 命令：`pytest -v -ra`
+
+说明：
+
+- 全量测试依赖 Neo4j / PostgreSQL / Redis / Ollama 等服务，默认不在 GitHub Hosted 环境提供。
+- 因此将完整集成与回归测试放在 self-hosted runner 手动触发，避免 PR 流水线被外部依赖阻塞。
 
 ---
 

@@ -1,11 +1,13 @@
 import json
 import os
 import logging
+import time
 
 from celery import Celery
 import redis
 
 from core.ingestion import SMEIngestor
+from core.query_cache import QueryCache
 from configs.config import settings
 
 logger = logging.getLogger(__name__)
@@ -21,6 +23,10 @@ celery_app = Celery(
 )
 
 redis_client = redis.Redis.from_url(settings.REDIS_URL)
+try:
+    _query_cache = QueryCache(url=settings.REDIS_URL)
+except Exception:  # noqa: BLE001
+    _query_cache = None
 
 GLOBAL_STATUS_KEY = "ingestion:status"
 
@@ -32,6 +38,7 @@ def _set_status(filename: str, status: str) -> None:
 
 def _set_global_status(payload: dict) -> None:
     try:
+        payload = {**payload, "updated_at": int(time.time())}
         redis_client.set(GLOBAL_STATUS_KEY, json.dumps(payload, ensure_ascii=False))
     except Exception as e:  # noqa: BLE001
         logger.warning("Failed to write ingestion status to Redis: %s", e)
@@ -80,6 +87,12 @@ def ingest_document_task(file_path: str) -> None:
         # 传入目录路径，利用已有的按文件名增量判断机制。
         directory = os.path.dirname(file_path) or settings.DATA_RAW_DIR
         ingestor.ingest_data(directory_path=directory, progress_callback=_progress_callback)
+        if _query_cache is not None:
+            try:
+                new_version = _query_cache.bump_graph_version()
+                logger.info("Graph version bumped to %s after ingestion", new_version)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("Failed to bump graph version: %s", e)
         _set_status(filename, "done")
         _set_global_status(
             {
@@ -97,7 +110,7 @@ def ingest_document_task(file_path: str) -> None:
         _set_status(filename, "failed")
         _set_global_status(
             {
-                "status": "idle",
+                "status": "failed",
                 "message": f"Error: {e}",
                 "progress": 0,
                 "graph_done": 0,

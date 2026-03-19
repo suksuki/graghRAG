@@ -22,8 +22,34 @@ const App = () => {
     const [availableModels, setAvailableModels] = useState([]);
     const [testResult, setTestResult] = useState({ type: null, msg: '' });
     const [saveStatus, setSaveStatus] = useState(null);
+    const [expandedGraph, setExpandedGraph] = useState({});
+    const [errorModal, setErrorModal] = useState(null);
 
     const chatEndRef = useRef(null);
+
+    const triggerFollowupEntityQuery = (entity) => {
+        try {
+            localStorage.setItem('graphrag_suggested_question', `Tell me more about ${entity}`);
+        } catch (e) { }
+        window.scrollTo(0, 0);
+        window.dispatchEvent(new CustomEvent('graphrag_open_chat'));
+    };
+
+    const hasGraphDataMsg = (msg) => (
+        ((msg?.graph?.relations?.length ?? 0) > 0) ||
+        ((msg?.graph?.summary?.length ?? 0) > 0) ||
+        ((msg?.graph?.two_hop?.length ?? 0) > 0) ||
+        ((msg?.debug?.graph_relations_count ?? 0) > 0)
+    );
+    const openErrorModal = (errorObj) => {
+        if (!errorObj) return;
+        setErrorModal({
+            code: errorObj.code || 'UNKNOWN_ERROR',
+            message: errorObj.message || (t('upload_failed') || '操作失败'),
+            detail: errorObj.detail || '',
+            suggestion: errorObj.suggestion || '',
+        });
+    };
 
     useEffect(() => {
         fetchAppSettings(); // Initial Load
@@ -60,7 +86,13 @@ const App = () => {
         try {
             const res = await axios.get('/api/ingestion/status');
             setIngestionStatus(res.data);
-        } catch (e) { }
+        } catch (e) {
+            setIngestionStatus(prev => ({
+                ...prev,
+                status: 'failed',
+                message: '无法获取解析状态，请检查后端服务',
+            }));
+        }
     };
 
     const fetchDocuments = async () => {
@@ -141,11 +173,12 @@ const App = () => {
         try {
             const res = await fetch('/api/query/stream', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'x-lang': i18n.language || 'zh' },
                 body: JSON.stringify({ query: userQuery, mode: queryMode }),
             });
             if (!res.ok) throw new Error(res.statusText);
-            setMessages(prev => [...prev, { role: 'assistant', text: '', sources: null, pipeline_latency_ms: null }]);
+            const assistantId = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+            setMessages(prev => [...prev, { id: assistantId, role: 'assistant', text: '', sources: null, pipeline_latency_ms: null, suggestions: [] }]);
             const reader = res.body.getReader();
             const dec = new TextDecoder();
             let buffer = '';
@@ -170,13 +203,43 @@ const App = () => {
                             const lat = event.pipeline_latency_ms || {};
                             if (event.first_token_ms != null) lat.first_token_ms = event.first_token_ms;
                             if (event.total_ms != null) lat.total_ms = event.total_ms;
+                            const normalizedGraph = {
+                                relations: Array.isArray(event.graph?.relations) ? event.graph.relations : [],
+                                summary: typeof event.graph?.summary === 'string' ? event.graph.summary : '',
+                                two_hop: Array.isArray(event.graph?.two_hop) ? event.graph.two_hop : [],
+                                count: Number(event.graph?.count ?? (Array.isArray(event.graph?.relations) ? event.graph.relations.length : 0)),
+                                used: Boolean(event.graph?.used),
+                            };
+                            const rel0 = normalizedGraph.relations[0] || null;
+                            const entity = rel0?.source || event.debug?.entity_used_for_graph || null;
+                            console.log("GRAPH UI DATA:", normalizedGraph);
                             setMessages(prev => {
                                 const next = [...prev];
                                 const last = next[next.length - 1];
-                                if (last && last.role === 'assistant') next[next.length - 1] = { ...last, text: event.answer ?? last.text, sources: event.sources ?? last.sources, pipeline_latency_ms: lat };
+                                if (last && last.role === 'assistant') next[next.length - 1] = {
+                                    ...last,
+                                    text: event.answer ?? last.text,
+                                    sources: event.sources ?? last.sources,
+                                    pipeline_latency_ms: lat,
+                                    graph: normalizedGraph,
+                                    debug: event.debug ?? null,
+                                };
                                 return next;
                             });
+                            if (entity) {
+                                try {
+                                    const sres = await fetch(`/api/graph/suggestions?entity=${encodeURIComponent(entity)}`, {
+                                        headers: { 'x-lang': i18n.language || 'zh' },
+                                    });
+                                    if (sres.ok) {
+                                        const sdata = await sres.json();
+                                        const qs = Array.isArray(sdata?.questions) ? sdata.questions : [];
+                                        setMessages(prev => prev.map(m => (m?.id === assistantId ? { ...m, suggestions: qs } : m)));
+                                    }
+                                } catch (_) { }
+                            }
                         } else if (event.type === 'error') {
+                            openErrorModal(event.error || { message: event.detail || t('error_query') });
                             setMessages(prev => {
                                 const next = [...prev];
                                 const last = next[next.length - 1];
@@ -188,6 +251,7 @@ const App = () => {
                 }
             }
         } catch (e) {
+            openErrorModal(e?.response?.data?.error || { message: t('error_query'), detail: e.message || '' });
             setMessages(prev => [...prev, { role: 'assistant', text: t('error_query') + ' ' + (e.message || '') }]);
         } finally { setLoading(false); }
     };
@@ -215,7 +279,7 @@ const App = () => {
             await axios.delete(`/api/documents/${encodeURIComponent(name)}`);
             fetchDocuments(); // Refresh list
         } catch (e) {
-            alert('删除失败: ' + (e.response?.data?.detail || e.message));
+            openErrorModal(e?.response?.data?.error || { message: t('delete_failed'), detail: e.response?.data?.detail || e.message });
         }
     };
 
@@ -228,9 +292,27 @@ const App = () => {
     const [isUploading, setIsUploading] = useState(false);
     const [uploadProgress, setUploadProgress] = useState(0);
     const [lastUploadedFiles, setLastUploadedFiles] = useState([]);
+    const [uploadJobs, setUploadJobs] = useState([]);
+    const graphProgressPct = (ingestionStatus.graph_total > 0)
+        ? Math.round(((ingestionStatus.graph_done || 0) * 100) / ingestionStatus.graph_total)
+        : 0;
     const handleFileUpload = async (e) => {
         const files = e.target.files;
         if (!files.length) return;
+        const MAX_FILE_SIZE = 50 * 1024 * 1024;
+        const ALLOWED = ['.pdf', '.docx', '.pptx', '.xlsx', '.txt', '.jpg', '.png', '.jpeg', '.xdmp'];
+        for (let i = 0; i < files.length; i++) {
+            const f = files[i];
+            const ext = (f.name.slice(f.name.lastIndexOf('.')) || '').toLowerCase();
+            if (!ALLOWED.includes(ext)) {
+                alert(`上传失败: 文件类型不支持 (${f.name})`);
+                return;
+            }
+            if (f.size > MAX_FILE_SIZE) {
+                alert(`上传失败: 文件过大，超过 50MB (${f.name})`);
+                return;
+            }
+        }
         setIsUploading(true);
         setUploadProgress(0);
         setLastUploadedFiles([]);
@@ -238,6 +320,7 @@ const App = () => {
         for (let i = 0; i < files.length; i++) formData.append('files', files[i]);
         try {
             const res = await axios.post('/api/upload', formData, {
+                headers: { 'x-lang': i18n.language || 'zh' },
                 onUploadProgress: (progressEvent) => {
                     const percentCompleted = progressEvent.total
                         ? Math.round((progressEvent.loaded * 100) / progressEvent.total)
@@ -246,14 +329,58 @@ const App = () => {
                 }
             });
             const names = res.data?.files || [];
+            const jobs = res.data?.jobs || [];
             setLastUploadedFiles(names);
+            setUploadJobs(jobs);
             fetchIngestionStatus();
             if (names.length > 0) setTimeout(() => setLastUploadedFiles([]), 8000);
-        } catch (e) { } finally {
+        } catch (e) {
+            openErrorModal(e?.response?.data?.error || { message: t('upload_failed'), detail: e?.response?.data?.detail || e?.message || 'unknown error' });
+        } finally {
             setIsUploading(false);
             setUploadProgress(0);
         }
     };
+
+    useEffect(() => {
+        if (!uploadJobs.length) return;
+        let stopped = false;
+        const timer = setInterval(async () => {
+            try {
+                const statuses = await Promise.all(
+                    uploadJobs.map(async (j) => {
+                        const r = await axios.get(`/api/ingest/status?job_id=${encodeURIComponent(j.job_id)}`);
+                        return { ...j, ...r.data };
+                    })
+                );
+                if (stopped) return;
+                setUploadJobs(statuses);
+                const failed = statuses.find(s => s.status === 'failed');
+                if (failed) {
+                    setIngestionStatus(prev => ({
+                        ...prev,
+                        status: 'failed',
+                        message: failed?.error?.message || '上传处理失败',
+                    }));
+                    openErrorModal(failed.error || { message: '上传处理失败', detail: 'unknown error' });
+                }
+                const allDone = statuses.every(s => s.status === 'done' || s.status === 'failed');
+                if (allDone) {
+                    clearInterval(timer);
+                    fetchDocuments();
+                    fetchIngestionStatus();
+                }
+            } catch (e) {
+                setIngestionStatus(prev => ({
+                    ...prev,
+                    status: 'failed',
+                    message: e?.response?.data?.detail || e?.message || '轮询任务状态失败',
+                }));
+                openErrorModal(e?.response?.data?.error || { message: '轮询任务状态失败', detail: e?.message || '' });
+            }
+        }, 1500);
+        return () => { stopped = true; clearInterval(timer); };
+    }, [uploadJobs.length]);
 
     return (
         <div className="app-container">
@@ -296,7 +423,15 @@ const App = () => {
                 <div className="ingestion-indicator glass">
                     <div className="indicator-header">
                         <Activity size={14} className={ingestionStatus.status === 'processing' ? 'pulse' : ''} />
-                        <span>{t('ingestion_status')}: {ingestionStatus.status === 'processing' ? (ingestionStatus.message || t('analyzing')) : t('idle')}</span>
+                        <span>
+                            {t('ingestion_status')}: {
+                                ingestionStatus.status === 'processing'
+                                    ? (ingestionStatus.message || t('analyzing'))
+                                    : ingestionStatus.status === 'failed'
+                                        ? (ingestionStatus.message || '解析失败')
+                                        : t('idle')
+                            }
+                        </span>
                     </div>
                     {ingestionStatus.status === 'processing' && (
                         <>
@@ -320,10 +455,15 @@ const App = () => {
                             </div>
                             {ingestionStatus.graph_total > 0 && (
                                 <div className="indicator-stat" style={{ marginTop: '4px', fontSize: '12px', color: '#64748b' }}>
-                                    {t('graph_chunks_progress')}: {ingestionStatus.graph_done || 0}/{ingestionStatus.graph_total} {t('chunks_unit')} · {ingestionStatus.progress || 0}%
+                                    {t('graph_chunks_progress')}: {ingestionStatus.graph_done || 0}/{ingestionStatus.graph_total} {t('chunks_unit')} · {graphProgressPct}%
                                 </div>
                             )}
                         </>
+                    )}
+                    {ingestionStatus.status === 'failed' && (
+                        <div style={{ marginTop: '8px', fontSize: '12px', color: '#fca5a5', lineHeight: 1.4 }}>
+                            ❌ {ingestionStatus.message || '解析失败，请重试上传或检查后端日志'}
+                        </div>
                     )}
                     {lastUploadedFiles.length > 0 && (
                         <div className="indicator-stat" style={{ marginTop: '6px', fontSize: '11px', color: '#22c55e' }}>
@@ -356,6 +496,30 @@ const App = () => {
             </aside>
 
             <main className="chat-area">
+                {errorModal && (
+                    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+                        <div className="glass" style={{ width: 'min(560px, 92vw)', padding: '18px', borderRadius: '14px' }}>
+                            <div style={{ fontWeight: 700, fontSize: '18px', marginBottom: '10px' }}>❌ {t('upload_failed_title') || '上传失败'}</div>
+                            <div style={{ fontSize: '14px', marginBottom: '10px' }}>{errorModal.message}</div>
+                            {errorModal.detail ? (
+                                <details style={{ marginBottom: '10px', fontSize: '12px', opacity: 0.9 }}>
+                                    <summary>{t('view_detail') || '查看详情'}</summary>
+                                    <div style={{ marginTop: '8px', whiteSpace: 'pre-wrap' }}>{errorModal.detail}</div>
+                                </details>
+                            ) : null}
+                            {errorModal.suggestion ? (
+                                <div style={{ marginBottom: '14px', padding: '8px 10px', borderRadius: '8px', background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.3)' }}>
+                                    💡 {errorModal.suggestion}
+                                </div>
+                            ) : null}
+                            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                                <button type="button" onClick={() => setErrorModal(null)} style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid rgba(148,163,184,0.5)', background: 'transparent', color: 'inherit' }}>
+                                    {t('close') || '关闭'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
                 <div className="content-viewport">
                     {activeTab === 'chat' && (
                         <div className="chat-layout">
@@ -363,7 +527,178 @@ const App = () => {
                                 {messages.map((msg, i) => (
                                     <div key={i} className={`message-wrapper ${msg.role}`}>
                                         <div className={`message-bubble ${msg.role === 'user' ? 'primary' : 'glass'}`}>
+                                            {msg.role === 'assistant' && (
+                                                <>
+                                                <div style={{ marginBottom: '8px', fontSize: '12px', opacity: 0.9 }}>
+                                                    {hasGraphDataMsg(msg)
+                                                        ? '✅ Answer powered by Knowledge Graph'
+                                                        : '⚠️ Answer based on text retrieval only'}
+                                                </div>
+                                                </>
+                                            )}
                                             <div>{msg.text}</div>
+                                            {msg.role === 'assistant' && Array.isArray(msg.suggestions) && msg.suggestions.length > 0 && (
+                                                <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+                                                    <div style={{ fontWeight: 600, fontSize: '12px', marginBottom: '6px' }}>💡 推荐问题</div>
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '12px' }}>
+                                                        {msg.suggestions.slice(0, 6).map((q, qidx) => (
+                                                            <button
+                                                                key={qidx}
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    setQuery(q);
+                                                                    setTimeout(() => handleQuery({ preventDefault: () => {} }), 0);
+                                                                }}
+                                                                style={{
+                                                                    textAlign: 'left',
+                                                                    background: 'rgba(99,102,241,0.10)',
+                                                                    border: '1px solid rgba(99,102,241,0.25)',
+                                                                    color: 'inherit',
+                                                                    borderRadius: '10px',
+                                                                    padding: '8px 10px',
+                                                                    cursor: 'pointer',
+                                                                    opacity: 0.95,
+                                                                }}
+                                                            >
+                                                                {q}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                            {msg.role === 'assistant' && msg.graph && (
+                                                <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+                                                    {(() => {
+                                                        const hasGraphData = hasGraphDataMsg(msg);
+
+                                                        if (!hasGraphData) {
+                                                            return (
+                                                                <div style={{ fontSize: '12px', opacity: 0.85 }}>
+                                                                    ⚠️ No structured knowledge found in documents
+                                                                    <div style={{ marginTop: '6px', opacity: 0.8 }}>
+                                                                        💡 Try asking more specific questions
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        }
+
+                                                        return (
+                                                            <>
+                                                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                                                                    <div style={{ fontWeight: 600, fontSize: '12px' }}>🧠 Knowledge Graph</div>
+                                                                    {Array.isArray(msg.graph?.relations) && msg.graph.relations.length > 8 && (
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => setExpandedGraph(prev => ({ ...prev, [i]: !prev[i] }))}
+                                                                            style={{ background: 'transparent', border: '1px solid rgba(148,163,184,0.4)', color: 'inherit', borderRadius: '8px', padding: '2px 8px', fontSize: '11px', cursor: 'pointer', opacity: 0.9 }}
+                                                                        >
+                                                                            {expandedGraph[i] ? '收起' : '展开'}
+                                                                        </button>
+                                                                    )}
+                                                                </div>
+
+                                                                {msg.graph?.summary && (
+                                                                    <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: '1px solid rgba(255,255,255,0.08)', fontSize: '12px' }}>
+                                                                        <div style={{ fontWeight: 600, marginBottom: '4px' }}>📌 Key Insight</div>
+                                                                        <div style={{ opacity: 0.9 }}>{msg.graph.summary}</div>
+                                                                    </div>
+                                                                )}
+
+                                                                {Array.isArray(msg.graph?.two_hop) && msg.graph.two_hop.length > 0 && (
+                                                                    <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: '1px solid rgba(255,255,255,0.08)', fontSize: '12px' }}>
+                                                                        <div style={{ fontWeight: 600, marginBottom: '6px' }}>🔎 2-hop</div>
+                                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                                                            {msg.graph.two_hop.slice(0, 6).map((row, ridx) => (
+                                                                                <div key={ridx} style={{ opacity: 0.9 }}>
+                                                                                    <span style={{ fontWeight: 600 }}>{row?.product || ''}</span>
+                                                                                    {Array.isArray(row?.domains) && row.domains.length > 0 && (
+                                                                                        <span style={{ opacity: 0.8 }}> → {row.domains.slice(0, 6).join(', ')}</span>
+                                                                                    )}
+                                                                                </div>
+                                                                            ))}
+                                                                        </div>
+                                                                    </div>
+                                                                )}
+
+                                                                {(() => {
+                                                                    const rels = Array.isArray(msg.graph?.relations) ? msg.graph.relations : [];
+                                                                    const provides = rels.filter(r => (r?.relation || '').toUpperCase() === 'PROVIDES').map(r => r?.target).filter(Boolean);
+                                                                    const applies = rels.filter(r => (r?.relation || '').toUpperCase() === 'APPLIES_TO').map(r => r?.target).filter(Boolean);
+                                                                    const products = [...new Set(provides)].slice(0, 8);
+                                                                    const industries = [...new Set(applies)].slice(0, 8);
+                                                                    const hasGroups = products.length > 0 || industries.length > 0;
+
+                                                                    if (!hasGroups) return null;
+
+                                                                    return (
+                                                                        <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: '1px solid rgba(255,255,255,0.08)', fontSize: '12px' }}>
+                                                                            {products.length > 0 && (
+                                                                                <div style={{ marginBottom: '10px' }}>
+                                                                                    <div style={{ fontWeight: 600, marginBottom: '6px' }}>📦 Products</div>
+                                                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                                                                                        {products.map((p, pidx) => (
+                                                                                            <span
+                                                                                                key={pidx}
+                                                                                                onClick={() => p && triggerFollowupEntityQuery(p)}
+                                                                                                style={{ cursor: p ? 'pointer' : 'default', background: 'rgba(99,102,241,0.14)', border: '1px solid rgba(99,102,241,0.25)', padding: '4px 10px', borderRadius: '999px', opacity: 0.95 }}
+                                                                                            >
+                                                                                                {p}
+                                                                                            </span>
+                                                                                        ))}
+                                                                                    </div>
+                                                                                </div>
+                                                                            )}
+                                                                            {industries.length > 0 && (
+                                                                                <div>
+                                                                                    <div style={{ fontWeight: 600, marginBottom: '6px' }}>🏭 Industries</div>
+                                                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                                                                                        {industries.map((d, didx) => (
+                                                                                            <span
+                                                                                                key={didx}
+                                                                                                onClick={() => d && triggerFollowupEntityQuery(d)}
+                                                                                                style={{ cursor: d ? 'pointer' : 'default', background: 'rgba(16,185,129,0.14)', border: '1px solid rgba(16,185,129,0.25)', padding: '4px 10px', borderRadius: '999px', opacity: 0.95 }}
+                                                                                            >
+                                                                                                {d}
+                                                                                            </span>
+                                                                                        ))}
+                                                                                    </div>
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+                                                                    );
+                                                                })()}
+
+                                                                {Array.isArray(msg.graph?.relations) && msg.graph.relations.length > 0 && (
+                                                                    <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+                                                                        <div style={{ fontWeight: 600, fontSize: '12px', marginBottom: '6px' }}>🔗 Relations</div>
+                                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '12px' }}>
+                                                                            {(expandedGraph[i] ? msg.graph.relations : msg.graph.relations.slice(0, 8)).map((r, ridx) => (
+                                                                                <div key={ridx} style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                                                                    <span
+                                                                                        onClick={() => r?.source && triggerFollowupEntityQuery(r.source)}
+                                                                                        style={{ cursor: r?.source ? 'pointer' : 'default', textDecoration: r?.source ? 'underline' : 'none', textUnderlineOffset: 2 }}
+                                                                                    >
+                                                                                        {r?.source || ''}
+                                                                                    </span>
+                                                                                    <span style={{ background: 'rgba(99,102,241,0.18)', border: '1px solid rgba(99,102,241,0.35)', color: '#a5b4fc', padding: '1px 8px', borderRadius: '999px', fontSize: '11px' }}>
+                                                                                        {r?.relation || ''}
+                                                                                    </span>
+                                                                                    <span
+                                                                                        onClick={() => r?.target && triggerFollowupEntityQuery(r.target)}
+                                                                                        style={{ cursor: r?.target ? 'pointer' : 'default', textDecoration: r?.target ? 'underline' : 'none', textUnderlineOffset: 2, opacity: 0.95 }}
+                                                                                    >
+                                                                                        {r?.target || ''}
+                                                                                    </span>
+                                                                                </div>
+                                                                            ))}
+                                                                        </div>
+                                                                    </div>
+                                                                )}
+                                                            </>
+                                                        );
+                                                    })()}
+                                                </div>
+                                            )}
                                             {msg.sources && msg.sources.length > 0 && (
                                                 <div className="sources-container" style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid rgba(255,255,255,0.1)', fontSize: '12px' }}>
                                                     <div style={{ opacity: 0.6, marginBottom: '4px' }}>{t('knowledge_sources')}</div>
@@ -378,21 +713,26 @@ const App = () => {
                                             )}
                                             {msg.pipeline_latency_ms && (
                                                 <div className="pipeline-latency" style={{ marginTop: '8px', paddingTop: '6px', borderTop: '1px solid rgba(255,255,255,0.08)', fontSize: '11px', opacity: 0.85, fontFamily: 'monospace' }}>
-                                                    ⏱ {msg.pipeline_latency_ms.cache_hit
-                                                        ? `缓存命中 ${msg.pipeline_latency_ms.total_ms}ms`
-                                                        : [
-                                                            msg.pipeline_latency_ms.first_token_ms != null && `首字 ${(msg.pipeline_latency_ms.first_token_ms / 1000).toFixed(1)}s`,
-                                                            `planner ${msg.pipeline_latency_ms.planner_ms}ms`,
-                                                            `vector ${msg.pipeline_latency_ms.vector_retrieval_ms}ms`,
-                                                            `graph ${msg.pipeline_latency_ms.graph_retrieval_ms || 0}ms`,
-                                                            `LLM ${((msg.pipeline_latency_ms.llm_generation_ms || 0) / 1000).toFixed(1)}s`,
-                                                            `总 ${((msg.pipeline_latency_ms.total_ms || 0) / 1000).toFixed(1)}s`,
-                                                          ].filter(Boolean).join(' · ')}
+                                                    ⏱ {[
+                                                        msg.pipeline_latency_ms.first_token_ms != null && `首字 ${(msg.pipeline_latency_ms.first_token_ms / 1000).toFixed(1)}s`,
+                                                        `planner ${msg.pipeline_latency_ms.planner_ms ?? 0}ms`,
+                                                        `vector ${msg.pipeline_latency_ms.vector_retrieval_ms ?? 0}ms`,
+                                                        `graph ${msg.pipeline_latency_ms.graph_retrieval_ms ?? 0}ms`,
+                                                        `LLM ${((msg.pipeline_latency_ms.llm_generation_ms ?? 0) / 1000).toFixed(1)}s`,
+                                                        `总 ${((msg.pipeline_latency_ms.total_ms ?? 0) / 1000).toFixed(1)}s`,
+                                                    ].filter(Boolean).join(' · ')}
                                                     {(msg.pipeline_latency_ms.prompt_chars != null || msg.pipeline_latency_ms.prompt_tokens != null) && (
                                                         <div style={{ marginTop: '4px', opacity: 0.75 }}>
                                                             Prompt: {msg.pipeline_latency_ms.prompt_chars ?? 0} 字符{msg.pipeline_latency_ms.prompt_tokens != null ? ` · ~${msg.pipeline_latency_ms.prompt_tokens} token` : ''}
                                                         </div>
                                                     )}
+                                                </div>
+                                            )}
+                                            {msg.role === 'assistant' && (
+                                                <div style={{ marginTop: '6px', fontSize: '11px', opacity: 0.8, fontFamily: 'monospace' }}>
+                                                    ⚡ Context: {msg.debug?.context_tokens ?? 0}<br />
+                                                    🧠 Graph relations: {msg.graph?.count ?? 0}<br />
+                                                    📄 Chunks used: {msg.debug?.chunks_used ?? 0}
                                                 </div>
                                             )}
                                         </div>

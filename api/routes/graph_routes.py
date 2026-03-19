@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 
 from api.controllers.graph_controller import (
     list_nodes_controller,
@@ -8,6 +8,7 @@ from api.controllers.graph_controller import (
     node_documents_controller,
     graph_overview_controller,
     suggested_questions_controller,
+    entity_suggestions_controller,
     entity_types_controller,
     list_entities_controller,
 )
@@ -81,6 +82,16 @@ def suggested_questions(limit: int = Query(10, ge=1, le=50)):
     返回一组基于图关系自动生成的推荐问题，帮助用户了解可以问什么。
     """
     return suggested_questions_controller(limit=limit)
+
+
+@router.get("/suggestions")
+def entity_suggestions(
+    request: Request,
+    entity: str = Query(...),
+    limit: int = Query(5, ge=1, le=20),
+):
+    lang = (request.headers.get("x-lang") or "zh").strip().lower()
+    return entity_suggestions_controller(entity=entity, limit=limit, lang=lang)
 
 
 @router.get("/entities")

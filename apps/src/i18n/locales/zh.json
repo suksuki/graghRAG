@@ -51,6 +51,9 @@
         "extraction_tip": "建议使用 7B 等小模型，速度快。图谱抽取不需要大参数推理。",
         "database_status": "数据库: Neo4j + Postgres",
         "delete_confirm": "确定要删除文档 {{name}} 吗？",
-        "delete_failed": "删除失败"
+        "delete_failed": "删除失败",
+        "upload_failed_title": "上传失败",
+        "view_detail": "查看详情",
+        "close": "关闭"
     }
 }

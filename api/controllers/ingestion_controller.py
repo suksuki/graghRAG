@@ -4,6 +4,7 @@ import datetime
 import json
 import logging
 import os
+import time
 
 try:
     import pwd
@@ -13,6 +14,7 @@ except ImportError:  # pragma: no cover - non-Unix platforms
 import redis
 
 from configs.config import settings
+from api.errors import AppError, ErrorCode, error_payload
 from api.utils import (
     sanitize_filename,
     is_allowed_extension,
@@ -22,7 +24,7 @@ from api.utils import (
     ALLOWED_EXTENSIONS,
 )
 from api.deps import graph_engine, vector_engine, ingestor
-from workers.celery_worker import ingest_document_task, _set_status
+from workers.celery_worker import ingest_document_task, _set_status, celery_app
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +66,13 @@ def handle_upload(files) -> Dict[str, Any]:
     可能抛 ValueError 表示 4xx 场景，由路由转换成 HTTPException。
     """
     if len(files) > MAX_FILES_PER_UPLOAD:
-        raise ValueError(f"Too many files. Maximum {MAX_FILES_PER_UPLOAD} files per upload.")
+        raise AppError(
+            code=ErrorCode.UNKNOWN_ERROR,
+            message=f"文件数量超过限制（最多 {MAX_FILES_PER_UPLOAD} 个）",
+            detail=f"当前上传数量：{len(files)}",
+            suggestion="请分批上传文件",
+            status_code=400,
+        )
 
     if not os.path.exists(settings.DATA_RAW_DIR):
         os.makedirs(settings.DATA_RAW_DIR)
@@ -73,10 +81,22 @@ def handle_upload(files) -> Dict[str, Any]:
     for file in files:
         safe_name = sanitize_filename(file.filename)
         if not safe_name:
-            raise ValueError(f"Invalid filename: {file.filename!r}")
+            raise AppError(
+                code=ErrorCode.PARSE_ERROR,
+                message="文件名不合法",
+                detail=f"原始文件名：{file.filename!r}",
+                suggestion="请使用常规文件名（字母/数字/中划线）后重试",
+                status_code=400,
+            )
         if not is_allowed_extension(safe_name):
             allowed = ", ".join(sorted(ALLOWED_EXTENSIONS))
-            raise ValueError(f"File type not allowed: {file.filename}. Allowed: {allowed}")
+            raise AppError(
+                code=ErrorCode.UNSUPPORTED_FILE_TYPE,
+                message="不支持该文件类型",
+                detail=f"文件：{file.filename}，支持类型：{allowed}",
+                suggestion="请转换为支持的类型后重试",
+                status_code=400,
+            )
 
         file_path = os.path.join(settings.DATA_RAW_DIR, safe_name)
         size = 0
@@ -92,9 +112,12 @@ def handle_upload(files) -> Dict[str, Any]:
                         os.remove(file_path)
                     except OSError:
                         pass
-                    raise ValueError(
-                        f"File {safe_name} exceeds maximum size "
-                        f"({MAX_FILE_SIZE_BYTES // (1024 * 1024)}MB)."
+                    raise AppError(
+                        code=ErrorCode.FILE_TOO_LARGE,
+                        message=f"文件超过大小限制（最大 {MAX_FILE_SIZE_BYTES // (1024 * 1024)}MB）",
+                        detail=f"文件：{safe_name}，当前大小约：{size // (1024 * 1024)}MB",
+                        suggestion="请压缩文件或分批上传",
+                        status_code=400,
                     )
                 buffer.write(chunk)
         saved_files.append(safe_name)
@@ -102,17 +125,71 @@ def handle_upload(files) -> Dict[str, Any]:
     # 使用 Celery 异步队列，每个文件一个任务，并写入 Redis 状态为 queued。
     # 如果 Celery / Redis 不可用（例如测试环境未启动 Redis），则静默降级为仅保存文件，
     # 由外部显式调用 ingestor.ingest_data() 完成同步摄取。
+    jobs: List[Dict[str, str]] = []
     for fname in saved_files:
         try:
             _set_status(fname, "queued")
             file_path = os.path.join(settings.DATA_RAW_DIR, fname)
-            ingest_document_task.delay(file_path)
+            task = ingest_document_task.delay(file_path)
+            jobs.append({"file": fname, "job_id": task.id, "status": "queued"})
         except Exception as e:  # noqa: BLE001
             logger.warning("Failed to enqueue Celery task for %s: %s", fname, e)
 
     if len(saved_files) == 1:
-        return {"status": "queued", "filename": saved_files[0], "files": saved_files}
-    return {"status": "queued", "filename": saved_files, "files": saved_files}
+        return {"status": "queued", "filename": saved_files[0], "files": saved_files, "jobs": jobs}
+    return {"status": "queued", "filename": saved_files, "files": saved_files, "jobs": jobs}
+
+
+def get_ingest_job_status_controller(job_id: str) -> Dict[str, Any]:
+    """查询单个 ingestion job 状态。"""
+    if not job_id or not job_id.strip():
+        return {
+            "status": "failed",
+            "error": error_payload(
+                ErrorCode.UNKNOWN_ERROR,
+                "任务标识缺失",
+                "job_id is required",
+                "请刷新页面后重试上传",
+            )["error"],
+        }
+    res = celery_app.AsyncResult(job_id.strip())
+    state = (res.state or "PENDING").upper()
+    if state in ("PENDING", "RECEIVED", "STARTED", "RETRY"):
+        return {"status": "processing", "progress": 10 if state == "PENDING" else 50, "job_id": job_id}
+    if state == "SUCCESS":
+        return {"status": "done", "progress": 100, "job_id": job_id}
+    # FAILURE / REVOKED / other unexpected states
+    err = str(res.result) if res.result is not None else "unknown error"
+    msg = err.lower()
+    if "timeout" in msg or "timed out" in msg:
+        payload = error_payload(
+            ErrorCode.TIMEOUT,
+            "处理超时",
+            err,
+            "请重试上传，或减少单次上传文件大小",
+        )["error"]
+    elif "graph" in msg:
+        payload = error_payload(
+            ErrorCode.GRAPH_BUILD_FAILED,
+            "图索引构建失败",
+            err,
+            "请检查文档内容格式后重试",
+        )["error"]
+    elif "vector" in msg:
+        payload = error_payload(
+            ErrorCode.VECTOR_INDEX_FAILED,
+            "向量索引构建失败",
+            err,
+            "请重试上传，若持续失败请联系管理员",
+        )["error"]
+    else:
+        payload = error_payload(
+            ErrorCode.UNKNOWN_ERROR,
+            "文档处理失败",
+            err,
+            "请重试上传并查看详细错误",
+        )["error"]
+    return {"status": "failed", "progress": 0, "job_id": job_id, "error": payload}
 
 
 def list_documents_controller() -> List[Dict[str, Any]]:
@@ -207,11 +284,19 @@ def get_ingestion_status_controller() -> Dict[str, Any]:
             if raw:
                 data = json.loads(raw.decode("utf-8"))
                 # 只覆盖已知字段，避免意外键污染
-                for key in ("status", "message", "progress", "graph_done", "graph_total", "files_in_batch", "file_names"):
+                for key in ("status", "message", "progress", "graph_done", "graph_total", "files_in_batch", "file_names", "updated_at"):
                     if key in data:
                         base[key] = data[key]
         except Exception as e:  # noqa: BLE001
             logger.debug("Failed to read ingestion status from Redis: %s", e)
+
+        # 防卡死保护：长时间 processing 但无更新，转为 failed，避免前端一直显示处理中
+        updated_at = base.get("updated_at")
+        if base.get("status") == "processing" and isinstance(updated_at, (int, float)):
+            stale_seconds = max(180, int(getattr(settings, "EXTRACTION_TIMEOUT", 120)) * 3)
+            if int(time.time()) - int(updated_at) > stale_seconds:
+                base["status"] = "failed"
+                base["message"] = "Ingestion seems stalled. Please retry or check worker logs."
 
         base["node_count"] = count
         base["file_count"] = file_count

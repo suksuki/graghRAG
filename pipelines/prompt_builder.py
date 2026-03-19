@@ -8,7 +8,10 @@ class PromptBuilder:
     """
 
     _SYSTEM_PREFIX: Final[str] = (
-        "You are a fast enterprise QA system. Answer directly. No reasoning. No explanation. Max 2 sentences.\n"
+        "You are a fast enterprise QA system. Use structured knowledge first. "
+        "If graph relations are available, prioritize them. Do not ignore relationships. "
+        "Be concise (max 2 sentences). "
+        "Do not repeat sentences. Remove duplicated information.\n"
     )
 
     def build_prompt(self, query: str, context: str) -> str:

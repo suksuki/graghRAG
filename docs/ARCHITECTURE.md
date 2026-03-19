@@ -281,3 +281,4 @@ celery_app = Celery(
 
 - **近期设计/配置变更**（LLM 延迟、流式、prompt、图谱概览等）：见 `docs/CHANGELOG.md`。
 - **首字与 LLM 延迟优化**：见 `docs/OPTIMIZATION_LLM_LATENCY.md`。
+- **当前运行时设计（Graph-first / Graph-dominant / Precompute / 受控抽取）**：见 `docs/DESIGN_GRAPHRAG_RUNTIME_2026Q1.md`。

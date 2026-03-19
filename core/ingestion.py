@@ -8,8 +8,11 @@ SMEIngestor — 文档摄取引擎
 
 import os
 import logging
+import time
 import psycopg2
 import nest_asyncio
+import signal
+from contextlib import contextmanager
 
 from llama_index.core import SimpleDirectoryReader
 from llama_index.core.node_parser import SentenceSplitter
@@ -22,6 +25,23 @@ nest_asyncio.apply()
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+@contextmanager
+def _time_limit(seconds: int):
+    def _handle_timeout(signum, frame):  # noqa: ANN001
+        raise TimeoutError(f"operation timed out after {seconds}s")
+
+    if seconds <= 0:
+        yield
+        return
+    prev_handler = signal.signal(signal.SIGALRM, _handle_timeout)
+    signal.alarm(seconds)
+    try:
+        yield
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, prev_handler)
 
 
 def _get_vector_indexed_files(vector_engine: VectorEngine) -> set:
@@ -62,6 +82,8 @@ class SMEIngestor:
         增量摄取：已索引的文件跳过，只处理新文件。
         向量写入和图索引分别独立判断，互不干扰。
         """
+        print(">>> [INGEST] start ingest_data")
+
         def update(msg, pct, graph_done=None, graph_total=None, files_in_batch=None, file_names=None):
             if progress_callback:
                 progress_callback(msg, pct, graph_done=graph_done, graph_total=graph_total, files_in_batch=files_in_batch, file_names=file_names)
@@ -94,8 +116,8 @@ class SMEIngestor:
 
         # 需要写向量的新文件
         new_for_vector = [f for f in all_files if f not in vector_indexed]
-        # 需要写图索引的新文件
-        new_for_graph  = [f for f in all_files if f not in graph_indexed]
+        # 需要写图索引的新文件（增量：仅处理 Neo4j 尚未收录的文件）
+        new_for_graph = [f for f in all_files if f not in graph_indexed]
 
         logger.info(
             f"New files: {len(new_for_vector)} for vector, "
@@ -150,31 +172,61 @@ class SMEIngestor:
             if n.metadata.get("file_name") in new_for_graph
         ]
         if graph_nodes:
-            max_graph = settings.GRAPH_MAX_NODES
+            max_graph = min(getattr(settings, "GRAPH_MAX_NODES", 5) or 5, 5)
             if max_graph and len(graph_nodes) > max_graph:
                 graph_nodes = graph_nodes[:max_graph]
                 logger.info(
                     f"Graph limited to first {max_graph} chunks (GRAPH_MAX_NODES) to speed up indexing."
                 )
+            print(f">>> [INGEST] graph_nodes count: {len(graph_nodes)}")
             num_graph = len(graph_nodes)
             logger.info(
-                f"Building graph index for {num_graph} nodes using '{settings.EXTRACTION_MODEL}'."
+                f"Building graph index for {num_graph} nodes using light LLM extractor."
             )
-            # 按批处理并更新进度：55%～95% 留给图索引，每批完成后推进
-            batch_size = max(1, min(5, num_graph // 6))  # 约 6～12 次进度更新
+            batch_size = 1
+            total_batches = (num_graph + batch_size - 1) // batch_size
             graph_pct_start = 55
-            graph_pct_range = 40  # 55 -> 95
+            graph_pct_range = 40
+            success_batches = 0
+            failed_batches = 0
             update(f"Graph indexing: 0/{num_graph} chunks (55%)", graph_pct_start, graph_done=0, graph_total=num_graph)
+            t_graph_start = time.perf_counter()
             for i in range(0, num_graph, batch_size):
                 batch = graph_nodes[i : i + batch_size]
-                self.graph_engine.create_index(batch)
+                batch_no = (i // batch_size) + 1
+                print(f">>> [GRAPH] batch {batch_no} / {total_batches}")
+                try:
+                    update(
+                        f"Graph indexing batch {batch_no}/{total_batches}, attempt 1...",
+                        graph_pct_start + int(graph_pct_range * i / max(1, num_graph)),
+                        graph_done=i,
+                        graph_total=num_graph,
+                    )
+                    with _time_limit(5):
+                        self.graph_engine.create_index(batch, num_workers=1, max_paths_per_chunk=2)
+                    success_batches += 1
+                except Exception as e:
+                    print(">>> [WARN] batch skipped due timeout/error")
+                    logger.warning("Graph batch skipped: %s", e)
+                    failed_batches += 1
+                    continue
                 done = min(i + len(batch), num_graph)
                 pct = graph_pct_start + int(graph_pct_range * done / num_graph)
                 pct = min(pct, 95)
                 update(f"Graph indexing: {done}/{num_graph} chunks ({pct}%)", pct, graph_done=done, graph_total=num_graph)
+            print(f">>> [GRAPH] success batches: {success_batches}")
+            print(f">>> [GRAPH] failed batches: {failed_batches}")
+            logger.info(
+                "Graph indexing summary: success=%s failed=%s total=%s elapsed_ms=%s",
+                success_batches,
+                failed_batches,
+                total_batches,
+                int((time.perf_counter() - t_graph_start) * 1000),
+            )
             logger.info("Graph index update complete.")
         else:
             logger.info("Graph index: no new nodes, skipping.")
+            print(">>> [INGEST][WARN] graph_nodes is empty")
 
         logger.info("Ingestion completed successfully.")
         update("Knowledge processing completed! (100%)", 100)

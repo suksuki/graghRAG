@@ -8,8 +8,12 @@ GraphEngine — Neo4j 知识图谱引擎
 """
 
 import logging
+import re
+from typing import Any, Iterable, Optional
 from llama_index.graph_stores.neo4j import Neo4jPropertyGraphStore
 from llama_index.core import PropertyGraphIndex, Settings
+from llama_index.core.indices.property_graph.transformations import SimpleLLMPathExtractor
+from llama_index.core.prompts import PromptTemplate
 from llama_index.llms.ollama import Ollama
 from llama_index.embeddings.ollama import OllamaEmbedding
 from configs.config import settings
@@ -38,12 +42,15 @@ class GraphEngine:
             base_url=settings.OLLAMA_BASE_URL,
             **_ollama_kw
         )
-        # 抽取模型：图谱实体关系抽取（用小模型，快很多）
-        # 使用较短超时，避免单块卡住导致“图索引一直卡着”
+        # 轻量抽取模型：严格限制 token，避免 ingestion 阻塞
         self.extraction_llm = Ollama(
             model=settings.EXTRACTION_MODEL,
             base_url=settings.OLLAMA_BASE_URL,
-            request_timeout=settings.EXTRACTION_TIMEOUT
+            request_timeout=settings.EXTRACTION_TIMEOUT,
+            context_window=1024,
+            additional_kwargs={"num_ctx": 1024, "num_predict": 32, "temperature": 0},
+            keep_alive="30m",
+            thinking=False,
         )
         self.embed_model = OllamaEmbedding(
             model_name=settings.EMBEDDING_MODEL,
@@ -79,44 +86,135 @@ class GraphEngine:
     # ------------------------------------------------------------------
     # 图索引构建
     # ------------------------------------------------------------------
-    def create_index(self, nodes, num_workers: int = None, max_paths_per_chunk: int = 5):
-        """
-        用小模型对 nodes 进行实体关系抽取，写入 Neo4j。
-        注意：每个 node（文本块）会调用一次 LLM，块多时耗时会明显长于向量化；属正常现象。
-        - extraction_llm: 比主模型小，速度快
-        - num_workers: 并发数（根据 GPU 显存调整，建议 1-4）
-        - max_paths_per_chunk: 每块最多抽几条关系，越小单次 LLM 越快
-        """
-        from llama_index.core.indices.property_graph import SimpleLLMPathExtractor
+    def _score_chunk_text(self, text: str) -> int:
+        t = (text or "").strip()
+        if not t:
+            return 0
+        s = 0
+        if any(k in t for k in ("产品", "平台", "系统")):
+            s += 2
+        if re.search(r"\b[A-Za-z]{3,}\b", t):
+            s += 2
+        if any(k in t for k in ("应用", "行业", "金融", "政府")):
+            s += 1
+        if len(t) > 50:
+            s += 1
+        return s
 
+    def _select_high_value_nodes(self, nodes: list[Any], top_k: int = 5) -> list[Any]:
+        scored: list[tuple[int, Any]] = []
+        seen: set[str] = set()
+        for node in nodes:
+            text = (getattr(node, "text", "") or "").strip()
+            if not text:
+                continue
+            # 去重：对前缀做归一化，避免重复页头/模板块反复送 LLM
+            key = re.sub(r"\s+", " ", text[:80]).lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            scored.append((self._score_chunk_text(text), node))
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [n for _, n in scored[:top_k]]
+
+    def create_index(self, nodes, num_workers: int = 1, max_paths_per_chunk: int = 2):
+        """
+        受控 LLM 抽取（轻量配置）写入 Neo4j。
+        - num_workers 固定 1
+        - max_paths_per_chunk 固定 2
+        """
         if not nodes:
             logger.info("No new nodes to index into Neo4j, skipping graph extraction.")
+            print(">>> [GRAPH] create_index called with 0 nodes, skip.")
             return None
 
-        if num_workers is None:
-            num_workers = settings.EXTRACTION_NUM_WORKERS
         n = len(nodes)
+        print(f">>> [GRAPH] create_index received nodes: {n}")
         logger.info(
-            f"Graph extraction starting: model={settings.EXTRACTION_MODEL}, "
-            f"nodes={n}, workers={num_workers}, timeout={settings.EXTRACTION_TIMEOUT}s per request. "
-            f"Each chunk triggers one LLM call — expect ~{n} calls, may take several minutes."
+            "Graph ingestion starting (LLM-LIGHT): nodes=%s, workers=1, max_paths_per_chunk=2",
+            n,
+        )
+        nodes = self._select_high_value_nodes(list(nodes), top_k=5)
+        logger.info("Graph high-value node selection: selected=%s", len(nodes))
+
+        # Neo4j property graph 不接受嵌套 map 作为属性；仅保留稳定且原子化的 metadata
+        safe_nodes = []
+        for node in nodes:
+            md = getattr(node, "metadata", {}) or {}
+            safe_md = {}
+            for k in ("file_name", "doc_id", "source"):
+                v = md.get(k)
+                if isinstance(v, (str, int, float, bool)) and v is not None:
+                    safe_md[k] = v
+            try:
+                node.metadata = safe_md
+            except Exception:  # noqa: BLE001
+                pass
+            safe_nodes.append(node)
+
+        extract_prompt = PromptTemplate(
+            "Extract concise knowledge triplets from text.\n\n"
+            "Entities:\n"
+            "- Company\n"
+            "- Product / System\n"
+            "- Industry / Domain\n\n"
+            "Relations:\n"
+            "- PROVIDES\n"
+            "- APPLIES_TO\n\n"
+            "Rules:\n"
+            "- Only explicit facts\n"
+            "- No hallucination\n"
+            "- Keep at most 2 triplets per chunk\n\n"
+            "Text:\n"
+            "{text}\n"
         )
 
         kg_extractor = SimpleLLMPathExtractor(
             llm=self.extraction_llm,
-            max_paths_per_chunk=max_paths_per_chunk,
-            num_workers=num_workers,
+            extract_prompt=extract_prompt,
+            max_paths_per_chunk=2,
+            num_workers=1,
         )
 
-        index = PropertyGraphIndex(
-            nodes,
+        PropertyGraphIndex(
+            nodes=safe_nodes,
             property_graph_store=self.graph_store,
             kg_extractors=[kg_extractor],
-            llm=self.llm,
+            llm=self.extraction_llm,
             embed_model=self.embed_model,
-            show_progress=True
+            show_progress=False,
         )
-        return index
+
+        # file marker for incremental graph ingestion
+        indexed_files: set[str] = set()
+        for node in safe_nodes:
+            md = getattr(node, "metadata", {}) or {}
+            fn = str(md.get("file_name") or "").strip()
+            if fn:
+                indexed_files.add(fn)
+        if indexed_files:
+            with self.graph_store._driver.session() as session:  # type: ignore[attr-defined]
+                for fn in indexed_files:
+                    session.run(
+                        """
+                        MERGE (f:IngestedFile {file_name: $fn})
+                        SET f.file_name = $fn
+                        """,
+                        fn=fn,
+                    )
+        logger.info("Graph ingestion done (LLM-LIGHT): file_markers=%s", len(indexed_files))
+
+        # 调试：写入后统计一次节点数量
+        try:
+            with self.graph_store._driver.session() as session:  # type: ignore[attr-defined]
+                res = session.run("MATCH (n) RETURN count(n) AS cnt")
+                cnt = res.single()["cnt"]
+                print(f">>> [GRAPH] Neo4j node_count after write: {cnt}")
+        except Exception as e:  # noqa: BLE001
+            print(">>> [ERROR] Neo4j count failed:", e)
+            logger.error("Failed to count nodes after graph write: %s", e)
+
+        return None
 
     # ------------------------------------------------------------------
     # 删除文档

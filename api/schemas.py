@@ -17,6 +17,9 @@ class QueryResponse(BaseModel):
     graph_context: Optional[List[str]] = None
     # 可选：pipeline 各阶段耗时（ms），便于在 UI 显示或排查瓶颈
     pipeline_latency_ms: Optional[Dict[str, Any]] = None
+    # GraphRAG 可视化字段（可选）
+    graph: Optional[Dict[str, Any]] = None
+    debug: Optional[Dict[str, Any]] = None
 
 
 class TestRequest(BaseModel):

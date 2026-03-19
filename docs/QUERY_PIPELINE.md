@@ -11,6 +11,7 @@
 - 依赖：
   - `api.deps.graph_engine`（`GraphEngine` 实例）
   - `api.deps.vector_engine`（`VectorEngine` 实例）
+  - `core.query_cache.QueryCache`（查询缓存 + graph version）
 
 Controllers 层只需调用：
 
@@ -18,6 +19,8 @@ Controllers 层只需调用：
 pipeline = QueryPipeline()
 result = pipeline.run(query_text, mode=request.mode)
 ```
+
+> 运行时详细行为（Graph-first、Graph-dominant、Precompute 命中逻辑与 debug 字段）请结合 `docs/DESIGN_GRAPHRAG_RUNTIME_2026Q1.md` 阅读。
 
 ---
 
@@ -351,7 +354,7 @@ def run(self, query: str, mode: str = "hybrid") -> Dict[str, Any]:
 
 - **事件类型**：
   - `{"type": "chunk", "text": "..."}`：每收到 LLM 一段正文即推送，仅包含最终回答文本（thinking 已在后端过滤）。
-  - `{"type": "done", "answer", "sources", "pipeline_latency_ms", "first_token_ms", "total_ms"}`：结束事件，包含完整答案、来源及延迟指标。
+  - `{"type": "done", "answer", "sources", "graph", "debug", "pipeline_latency_ms", "first_token_ms", "total_ms"}`：结束事件，包含完整答案、图数据、调试信息及延迟指标。
 
 - **延迟指标**（`pipeline_latency_ms`）：
   - `planner_ms`、`vector_retrieval_ms`、`graph_retrieval_ms`、`traversal_ms`、`llm_generation_ms`、`total_ms`、`first_token_ms`；
@@ -361,4 +364,23 @@ def run(self, query: str, mode: str = "hybrid") -> Dict[str, Any]:
   - **ContextBuilder**：`MAX_CONTEXT_CHUNKS=3`、`MAX_CHARS_PER_CHUNK=150`、`MAX_TOTAL_CHARS=800`，单句截断。
   - **PromptBuilder**：极简系统提示（Answer directly. No reasoning. Max 2 sentences.），结尾为「Answer:」。
   - Ollama 主模型：`num_ctx`、`num_predict`（如 64）、`temperature=0`、`thinking=False`，由 `core/graph_engine.py` 与 `core/vector_store.py` 在初始化时传入。
+
+### 10.1 done 事件中 graph/debug 的稳定约定
+
+- `graph`：
+  - `used`
+  - `relations`
+  - `count`
+  - `two_hop`
+  - `summary`
+- `debug`：
+  - `graph_used`
+  - `graph_relations_count`
+  - `answer_mode`
+  - `precompute_hit`
+  - `entity_raw`
+  - `entity_canonical`
+  - `entity_used_for_graph`
+
+前端应优先读取 `msg.graph.*`，并可用 `debug.graph_relations_count` 做兜底判断。
 

@@ -3,6 +3,7 @@
 """
 import os
 import re
+import html
 
 # 允许的文档扩展名（与 ingestion 中一致）
 # 增加 .xdmp（部分韩文/MarkLogic 导出会用到，按文本处理）
@@ -27,6 +28,13 @@ def sanitize_filename(filename: str) -> str:
     if not filename or not filename.strip():
         return ""
     raw = filename.strip()
+    # 反转义浏览器/前端可能传入的 HTML 实体（如 &amp; / &amp;amp;）
+    # 有些场景会发生“重复转义”，因此做有限次数的迭代反转义直到稳定。
+    for _ in range(3):
+        nxt = html.unescape(raw)
+        if nxt == raw:
+            break
+        raw = nxt
     # 禁止路径穿越（../ 或 .. 在任意位置）
     if ".." in raw:
         return ""
@@ -34,7 +42,8 @@ def sanitize_filename(filename: str) -> str:
     if not name:
         return ""
     # 只保留安全字符（字母、数字、中文、.-_ 空格等）
-    if not re.match(r"^[\w\u4e00-\u9fff\s.\-]+$", name):
+    # 允许少量常见符号：& + ( )
+    if not re.match(r"^[\w\u4e00-\u9fff\s.\-&+()]+$", name):
         return ""
     return name
 

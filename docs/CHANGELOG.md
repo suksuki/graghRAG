@@ -4,6 +4,63 @@
 
 ---
 
+## 2026-03（Graph Runtime 定型 + 测试补齐）
+
+### 目标
+
+完成 Query 与 UI 的数据契约对齐，稳定 Graph-first/Graph-dominant/Precompute 行为，并将 ingestion 图抽取收敛为“受控轻量模式”。
+
+### 1. Query 侧关键变更
+
+- 新增 canonical entity 统一入口，Graph 查询不再直接用原始 query：
+  - 输出 `entity_raw`、`entity_canonical`、`entity_used_for_graph` 调试字段。
+- `run_stream` done 事件中的 `graph` 统一标准化：
+  - 固定包含 `used/relations/count/two_hop/summary`。
+- Graph-first + 质量门控稳定化：
+  - `relations >= 3` 或 `summary` 存在才走 graph 直答，否则自动回退 vector。
+- Precompute 机制完善：
+  - 版本化 key：`graph:precompute:{entity}:{graph_version}`
+  - `precompute_hit` debug 输出
+  - 空命中保护与 24h TTL。
+
+### 2. Ingestion 侧关键变更
+
+- 图抽取改为“受控 LLM 轻量模式”：
+  - `num_workers=1`、`max_paths_per_chunk=2`
+  - `num_ctx=1024`、`num_predict=32`
+  - `batch_size=1`、`max_graph_nodes<=5`
+  - 单 batch 超时 5s 直接跳过（不阻塞整批）
+- 新增高价值 chunk 筛选（评分 + 去重 + top-k），降低无效抽取调用。
+- 保持增量图索引（`IngestedFile` marker）避免重复重建。
+- 状态可观测性增强：
+  - worker 全局状态 `updated_at`
+  - 失败写 `failed`，不再误写 `idle`
+  - stalled 检测由 API 状态接口兜底。
+
+### 3. Frontend/UI 关键变更
+
+- `hasGraphData` 判定改为多信号（`graph.* + debug.graph_relations_count`）。
+- done 事件中先标准化 `graph` 后写入 `msg.graph`，避免结构漂移导致 UI误判。
+- suggestions 实体提取增加 fallback：`debug.entity_used_for_graph`。
+- 增加 `console.log("GRAPH UI DATA:", msg.graph)` 便于现场排障。
+
+### 4. 文档与测试
+
+- 新增设计文档：
+  - `docs/DESIGN_GRAPHRAG_RUNTIME_2026Q1.md`
+- 更新文档：
+  - `docs/ARCHITECTURE.md`
+  - `docs/QUERY_PIPELINE.md`
+  - `docs/INGESTION_PIPELINE.md`
+  - `docs/TESTING.md`
+- 新增自动化回归用例：
+  - `tests/test_query_pipeline_contract.py`
+  - 覆盖 stream done 事件 graph/debug 契约与 canonical entity 链路。
+- 全量自动化测试结果：
+  - `19 passed`（unit + integration + regression）
+
+---
+
 ## 2026-03（LLM 延迟与体验优化）
 
 ### 目标

@@ -51,6 +51,9 @@
         "extraction_tip": "Use a small model (e.g. 7B) for speed. Graph extraction does not need large reasoning.",
         "database_status": "Database: Neo4j + Postgres",
         "delete_confirm": "Are you sure you want to delete document {{name}}?",
-        "delete_failed": "Delete Failed"
+        "delete_failed": "Delete Failed",
+        "upload_failed_title": "Upload Failed",
+        "view_detail": "View details",
+        "close": "Close"
     }
 }

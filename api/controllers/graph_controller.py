@@ -2,8 +2,107 @@ import logging
 from typing import Any, Dict, List
 
 from api.deps import graph_engine
+from core.query_cache import QueryCache, GRAPH_VERSION
+from core.entity_normalization import normalize_entity
 
 logger = logging.getLogger(__name__)
+try:
+    _graph_cache: QueryCache | None = QueryCache()
+except Exception:  # noqa: BLE001
+    _graph_cache = None
+
+_GRAPH_TTL = 600
+_index_ensured = False
+
+
+def _ensure_entity_name_index() -> None:
+    global _index_ensured
+    if _index_ensured:
+        return
+    try:
+        _run_cypher("CREATE INDEX entity_name IF NOT EXISTS FOR (n:Entity) ON (n.name)")
+        _index_ensured = True
+    except Exception:  # noqa: BLE001
+        pass
+
+def _resolve_canonical_entity(query: str) -> str | None:
+    q = (query or "").strip()
+    if not q:
+        return None
+    nq = normalize_entity(q)
+    _ensure_entity_name_index()
+    cypher_exact = """
+    MATCH (a:Entity {name: $q})
+    OPTIONAL MATCH (a)-[:ALIAS_OF]->(b:Entity)
+    RETURN coalesce(b.name, a.name) AS canonical
+    LIMIT 1
+    """
+    rows = _run_cypher(cypher_exact, {"q": q})
+    if not rows and nq and nq != q.lower():
+        rows = _run_cypher(cypher_exact, {"q": nq})
+    if rows:
+        try:
+            canonical = rows[0].get("canonical")
+            if isinstance(canonical, str) and canonical.strip():
+                return canonical
+        except Exception:  # noqa: BLE001
+            pass
+    cypher_fallback = """
+    MATCH (a:Entity)
+    WHERE toLower(a.name) CONTAINS toLower($q)
+    OPTIONAL MATCH (a)-[:ALIAS_OF]->(b:Entity)
+    RETURN coalesce(b.name, a.name) AS canonical
+    LIMIT 1
+    """
+    rows = _run_cypher(cypher_fallback, {"q": q})
+    if not rows and nq and nq != q.lower():
+        rows = _run_cypher(cypher_fallback, {"q": nq})
+    if not rows:
+        return None
+    try:
+        canonical = rows[0].get("canonical")
+    except Exception:  # noqa: BLE001
+        return None
+    return canonical if isinstance(canonical, str) and canonical.strip() else None
+
+
+def _resolve_entity_node_name(query: str) -> str | None:
+    q = (query or "").strip()
+    if not q:
+        return None
+    nq = normalize_entity(q)
+    _ensure_entity_name_index()
+    cypher_exact = """
+    MATCH (a:Entity {name: $q})
+    RETURN a.name AS name
+    LIMIT 1
+    """
+    rows = _run_cypher(cypher_exact, {"q": q})
+    if not rows and nq and nq != q.lower():
+        rows = _run_cypher(cypher_exact, {"q": nq})
+    if rows:
+        try:
+            name = rows[0].get("name")
+            if isinstance(name, str) and name.strip():
+                return name
+        except Exception:  # noqa: BLE001
+            pass
+    cypher_fallback = """
+    MATCH (a:Entity)
+    WHERE toLower(a.name) CONTAINS toLower($q)
+    RETURN a.name AS name
+    LIMIT 1
+    """
+    rows = _run_cypher(cypher_fallback, {"q": q})
+    if not rows and nq and nq != q.lower():
+        rows = _run_cypher(cypher_fallback, {"q": nq})
+    if not rows:
+        return None
+    try:
+        name = rows[0].get("name")
+    except Exception:  # noqa: BLE001
+        return None
+    return name if isinstance(name, str) and name.strip() else None
 
 
 def _format_node(record: Dict[str, Any]) -> Dict[str, Any]:
@@ -17,8 +116,12 @@ def _format_node(record: Dict[str, Any]) -> Dict[str, Any]:
 def _run_cypher(query: str, params: Dict[str, Any] | None = None):
     """Helper to run a Cypher query via the shared GraphEngine driver."""
     params = params or {}
-    with graph_engine.graph_store._driver.session() as session:  # type: ignore[attr-defined]
-        return list(session.run(query, **params))
+    try:
+        with graph_engine.graph_store._driver.session() as session:  # type: ignore[attr-defined]
+            return list(session.run(query, **params))
+    except Exception as e:  # noqa: BLE001
+        logger.error("Cypher query failed: %s", e)
+        return []
 
 
 def list_nodes_controller(limit: int = 100) -> Dict[str, List[Dict[str, Any]]]:
@@ -89,41 +192,40 @@ def graph_overview_controller() -> Dict[str, Any]:
     图谱总览信息：节点数、关系数、按类型统计、部分代表实体。
     """
     overview: Dict[str, Any] = {}
-    with graph_engine.graph_store._driver.session() as session:  # type: ignore[attr-defined]
-        # 总节点数
-        node_count_result = session.run("MATCH (n) RETURN count(n) AS cnt")
-        overview["node_count"] = node_count_result.single()["cnt"]
+    try:
+        with graph_engine.graph_store._driver.session() as session:  # type: ignore[attr-defined]
+            node_count_result = session.run("MATCH (n) RETURN count(n) AS cnt")
+            overview["node_count"] = node_count_result.single()["cnt"]
 
-        # 总关系数
-        edge_count_result = session.run("MATCH ()-[r]->() RETURN count(r) AS cnt")
-        overview["edge_count"] = edge_count_result.single()["cnt"]
+            edge_count_result = session.run("MATCH ()-[r]->() RETURN count(r) AS cnt")
+            overview["edge_count"] = edge_count_result.single()["cnt"]
 
-        # 按 label 统计
-        type_rows = session.run(
-            """
-            MATCH (n)
-            WITH labels(n)[0] AS type
-            RETURN type, count(*) AS cnt
-            ORDER BY cnt DESC
-            LIMIT 10
-            """
-        )
-        overview["entity_types"] = [
-            {"type": rec["type"] or "Unknown", "count": rec["cnt"]} for rec in type_rows
-        ]
+            type_rows = session.run(
+                """
+                MATCH (n)
+                WITH labels(n)[0] AS type
+                RETURN type, count(*) AS cnt
+                ORDER BY cnt DESC
+                LIMIT 10
+                """
+            )
+            overview["entity_types"] = [
+                {"type": rec["type"] or "Unknown", "count": rec["cnt"]} for rec in type_rows
+            ]
 
-        # 代表实体（有 name 的节点）
-        top_rows = session.run(
-            """
-            MATCH (n)
-            WHERE exists(n.name)
-            RETURN n.name AS name
-            LIMIT 10
-            """
-        )
-        overview["top_entities"] = [rec["name"] for rec in top_rows]
-
-    return overview
+            top_rows = session.run(
+                """
+                MATCH (n)
+                WHERE exists(n.name)
+                RETURN n.name AS name
+                LIMIT 10
+                """
+            )
+            overview["top_entities"] = [rec["name"] for rec in top_rows]
+        return overview
+    except Exception as e:  # noqa: BLE001
+        logger.error("Graph overview failed: %s", e)
+        return {"node_count": 0, "edge_count": 0, "entity_types": [], "top_entities": []}
 
 
 def entity_types_controller() -> Dict[str, Any]:
@@ -178,6 +280,159 @@ def suggested_questions_controller(limit: int = 10) -> Dict[str, List[str]]:
             uniq.append(q)
 
     return {"questions": uniq}
+
+
+def entity_suggestions_controller(entity: str, limit: int = 5, lang: str = "zh") -> Dict[str, Any]:
+    """
+    基于指定实体的一阶关系生成中文“推荐问题”。
+    """
+    norm_entity = normalize_entity(entity)
+    resolved_node = _resolve_entity_node_name(entity) or (entity or "").strip()
+    canonical = _resolve_canonical_entity(entity) or resolved_node
+    cache_key = f"graph:suggestions:{norm_entity or canonical}|{GRAPH_VERSION}"
+    if _graph_cache is not None:
+        cached = _graph_cache.get(cache_key)
+        if isinstance(cached, dict):
+            return cached
+    cypher = """
+    MATCH (a:Entity {name: $entity})
+    MATCH (a)-[r]->(b:Entity)
+    RETURN type(r) AS rel, b.name AS name
+    LIMIT $limit
+    """
+    records = _run_cypher(cypher, {"entity": canonical, "limit": limit})
+    if not records:
+        records = _run_cypher(
+            """
+            MATCH (a:Entity)
+            WHERE toLower(a.name) CONTAINS toLower($entity)
+            MATCH (a)-[r]->(b:Entity)
+            RETURN type(r) AS rel, b.name AS name
+            LIMIT $limit
+            """,
+            {"entity": canonical, "limit": limit},
+        )
+
+    relations: List[Dict[str, str]] = []
+    for rec in records:
+        rel = rec.get("rel")
+        b_name = rec.get("name")
+        if not rel or not b_name:
+            continue
+        if rel == "ALIAS_OF":
+            continue
+        relations.append({"type": rel, "target": b_name})
+
+    two_hop_rows: List[Dict[str, Any]] = []
+    cypher2 = """
+    MATCH (a:Entity {name: $entity})
+    MATCH (a)-[:PROVIDES]->(b:Entity)
+    OPTIONAL MATCH (b)-[:APPLIES_TO]->(c:Entity)
+    RETURN b.name AS product, collect(DISTINCT c.name) AS domains
+    LIMIT 10
+    """
+    rows2 = _run_cypher(cypher2, {"entity": canonical})
+    if not rows2:
+        rows2 = _run_cypher(
+            """
+            MATCH (a:Entity)
+            WHERE toLower(a.name) CONTAINS toLower($entity)
+            MATCH (a)-[:PROVIDES]->(b:Entity)
+            OPTIONAL MATCH (b)-[:APPLIES_TO]->(c:Entity)
+            RETURN b.name AS product, collect(DISTINCT c.name) AS domains
+            LIMIT 10
+            """,
+            {"entity": canonical},
+        )
+    for r in rows2:
+        p = r.get("product")
+        ds = r.get("domains") or []
+        if not p:
+            continue
+        if not isinstance(ds, list):
+            ds = []
+        two_hop_rows.append({"product": p, "domains": [x for x in ds if x]})
+
+    if (lang or "zh").startswith("en"):
+        prompt = (
+            "Answer ONLY in English. Do not use Chinese.\n"
+            "Generate 3-5 natural clickable questions based on graph relations.\n"
+            "Requirements:\n"
+            "- no duplicates\n"
+            "- cover products, industries, comparison, use-cases\n"
+            "- one question per line, no numbering, no explanation\n\n"
+            f"entity: {canonical}\n"
+            f"relations: {relations}\n"
+            f"two_hop: {two_hop_rows}\n"
+        )
+    else:
+        prompt = (
+            "请始终使用中文回答。不要使用英文。\n"
+            "你是企业知识助手。请基于给定的公司/实体及其图谱信息，生成 3-5 个自然、有人味、可点击的中文问题。\n"
+            "要求：\n"
+            "- 不重复，不逐个产品机械提问\n"
+            "- 覆盖：核心产品、行业应用、产品对比/差异、落地场景\n"
+            "- 每行一个问题，禁止编号，禁止解释\n\n"
+            f"entity: {canonical}\n"
+            f"relations: {relations}\n"
+            f"two_hop: {two_hop_rows}\n"
+        )
+
+    try:
+        from api.deps import graph_engine as _ge
+        raw = str(_ge.llm.complete(prompt))
+    except Exception:  # noqa: BLE001
+        raw = ""
+
+    qs: List[str] = []
+    for line in (raw or "").splitlines():
+        q = line.strip().lstrip("-").strip()
+        if not q:
+            continue
+        if len(q) < 3:
+            continue
+        if len(q) > 80:
+            q = q[:80].rstrip()
+        qs.append(q)
+        if len(qs) >= 5:
+            break
+
+    if not qs:
+        products = [r.get("target") for r in relations if r.get("type") == "PROVIDES" and r.get("target")]
+        domains = []
+        for row in two_hop_rows:
+            for d in row.get("domains") or []:
+                domains.append(d)
+        products = list(dict.fromkeys(products))[:5]
+        domains = list(dict.fromkeys(domains))[:5]
+        if (lang or "zh").startswith("en"):
+            qs = [
+                f"What are the core products of {canonical}?",
+                f"What industry use-cases does {canonical} have in {domains[0] if domains else 'its target industries'}?",
+                f"What problems can {products[0] if products else canonical} solve?",
+            ]
+        else:
+            qs = [
+                f"{canonical} 的核心产品有哪些？",
+                f"{canonical} 在 {domains[0] if domains else '行业'} 有哪些落地案例？",
+                f"{products[0] if products else canonical} 适合解决什么问题？",
+            ]
+
+    # 去重
+    seen = set()
+    uniq_q: List[str] = []
+    for q in qs:
+        if q not in seen:
+            seen.add(q)
+            uniq_q.append(q)
+
+    payload = {"entity": canonical, "canonical": canonical, "resolved": resolved_node, "relations": relations, "questions": uniq_q}
+    if _graph_cache is not None:
+        try:
+            _graph_cache.set(cache_key, payload, ttl=_GRAPH_TTL)
+        except Exception:  # noqa: BLE001
+            pass
+    return payload
 
 
 def list_entities_controller(entity_type: str, page: int = 1, size: int = 20) -> Dict[str, Any]:

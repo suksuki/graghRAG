@@ -8,7 +8,7 @@ from api.schemas import QueryRequest
 from pipelines.query_pipeline import QueryPipeline
 
 
-def query_knowledge(request: QueryRequest) -> Dict[str, Any]:
+def query_knowledge(request: QueryRequest, lang: str = "zh") -> Dict[str, Any]:
     """核心查询逻辑（Controller 层）."""
     logger = logging.getLogger(__name__)
 
@@ -23,14 +23,14 @@ def query_knowledge(request: QueryRequest) -> Dict[str, Any]:
         greetings = ["你好", "您好", "hi", "hello", "hey", "早上好", "下午好", "晚上好", "在吗"]
         if query_text.lower() in greetings or len(query_text) < 2:
             logger.info("Quick greeting detected, bypassing GraphRAG retrieval.")
-            pipeline = QueryPipeline()
+            pipeline = QueryPipeline(lang=lang)
             # 直接用 graph_engine 主模型生成简单问候回答
             resp = pipeline.graph_engine.llm.complete(
-                f"用户向你打招呼说：'{query_text}'。请作为一个专业的知识库助手礼貌且简短地回复。"
+                f"{pipeline._lang_instruction()}\n\n用户向你打招呼说：'{query_text}'。请作为一个专业的知识库助手礼貌且简短地回复。"
             )
             return {"answer": str(resp), "sources": [], "graph_context": []}
 
-        pipeline = QueryPipeline()
+        pipeline = QueryPipeline(lang=lang)
         return pipeline.run(query_text, mode=request.mode)
     except Exception as e:  # noqa: BLE001
         logger.error("Error during query: %s", e)
