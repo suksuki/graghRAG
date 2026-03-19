@@ -6,6 +6,7 @@ import re
 import time
 
 from api.deps import graph_engine, vector_engine
+from core.lang_guard import enforce_language
 from core.graph_traversal import GraphTraversalEngine, extract_triples
 from core.query_cache import GRAPH_VERSION, QueryCache
 from core.entity_normalization import normalize_entity
@@ -60,10 +61,31 @@ class QueryPipeline:
             self.query_cache = None
         self._precompute_mem: Dict[str, Dict[str, Any]] = {}
 
+    def _lang_bucket(self) -> str:
+        lang = (self.lang or "zh").strip().lower()
+        if lang.startswith("zh"):
+            return "zh"
+        if lang.startswith("ko"):
+            return "ko"
+        if lang.startswith("en"):
+            return "en"
+        return "en"
+
     def _lang_instruction(self) -> str:
-        if self.lang.startswith("en"):
+        lang = self._lang_bucket()
+        if lang == "en":
             return "Answer ONLY in English. Do not use Chinese."
+        if lang == "ko":
+            return "항상 한국어로 답변하세요. 영어와 중국어를 사용하지 마세요."
         return "请始终使用中文回答。不要使用英文。"
+
+    def _greeting_prompt(self, query: str) -> str:
+        lang = self._lang_bucket()
+        if lang == "en":
+            return f"The user greeted you with: '{query}'. Reply politely and briefly as a professional knowledge assistant."
+        if lang == "ko":
+            return f"사용자가 다음과 같이 인사했습니다: '{query}'. 전문적인 지식 도우미처럼 정중하고 짧게 답변하세요."
+        return f"用户向你打招呼说：'{query}'。请作为一个专业的知识库助手礼貌且简短地回复。"
 
     def _with_lang_instruction(self, prompt: str) -> str:
         return f"{self._lang_instruction()}\n\n{prompt}"
@@ -74,9 +96,13 @@ class QueryPipeline:
             return False
         ascii_letters = len(re.findall(r"[A-Za-z]", t))
         zh_chars = len(re.findall(r"[\u4e00-\u9fff]", t))
+        ko_chars = len(re.findall(r"[\uac00-\ud7a3]", t))
         total = max(len(t), 1)
-        if self.lang.startswith("en"):
+        lang = self._lang_bucket()
+        if lang == "en":
             return (zh_chars / total) > 0.2
+        if lang == "ko":
+            return (ko_chars / total) < 0.1 and ((ascii_letters + zh_chars) / total) > 0.2
         return (ascii_letters / total) > 0.5
 
     def _rewrite_in_target_language(self, text: str) -> str:
@@ -371,9 +397,21 @@ class QueryPipeline:
         domains_uniq = list(dict.fromkeys([d for d in domains if d]))
         if not company or (not products_uniq and not domains_uniq):
             return None
+        lang = self._lang_bucket()
+        if lang == "en":
+            top_products = ", ".join(products_uniq[:3]) if products_uniq else "related products"
+            top_domains = ", ".join(domains_uniq[:3]) if domains_uniq else "multiple industries"
+            return f"{company} provides {top_products} and is mainly applied in {top_domains}."
+        if lang == "ko":
+            top_products = ", ".join(products_uniq[:3]) if products_uniq else "관련 제품"
+            top_domains = ", ".join(domains_uniq[:3]) if domains_uniq else "여러 산업"
+            return f"{company}는 {top_products}를 제공하며, 주로 {top_domains} 분야에 적용됩니다."
         top_products = "、".join(products_uniq[:3]) if products_uniq else "相关产品"
         top_domains = "、".join(domains_uniq[:3]) if domains_uniq else "多个行业"
         return f"{company} 提供 {top_products}，主要应用于 {top_domains}"
+
+    def _guard_summary(self, summary: str | None) -> str:
+        return enforce_language(summary or "", self._lang_bucket(), llm=self.answer_llm)
 
     def _graph_quality_ok(self, relations_count: int, summary: str | None) -> bool:
         return (relations_count >= 3) or bool(summary)
@@ -386,14 +424,19 @@ class QueryPipeline:
                 pass
         return GRAPH_VERSION
 
-    def _precompute_key(self, entity: str, graph_version: str | None = None) -> str:
+    def _precompute_key(self, entity: str, graph_version: str | None = None, lang: str | None = None) -> str:
         ek = normalize_entity(entity or "") or (entity or "").strip().lower()
         gv = graph_version or self._graph_version()
-        return f"graph:precompute:{ek}:{gv}"
+        lk = (lang or self.lang or "zh").strip().lower()
+        return f"graph:precompute:{ek}:{lk}:{gv}"
+
+    def _query_cache_key(self, normalized_query: str, graph_version: str | None = None) -> str:
+        gv = graph_version or self._graph_version()
+        return f"{normalized_query}|{self._lang_bucket()}|{gv}"
 
     def _build_precompute_payload(self, summary: str | None, relations: List[Dict[str, str]]) -> Dict[str, Any]:
         return {
-            "summary": summary or "",
+            "summary": self._guard_summary(summary),
             "relations": (relations or [])[: self.max_graph_relations],
             "suggestions": [],
         }
@@ -417,18 +460,34 @@ class QueryPipeline:
 
     def _get_precompute(self, entity: str, graph_version: str | None = None) -> Dict[str, Any] | None:
         key = self._precompute_key(entity, graph_version=graph_version)
+        val: Dict[str, Any] | None = None
         if self.query_cache is not None:
             try:
-                val = self.query_cache.get(key)
-                if isinstance(val, dict):
-                    return val
+                cached_val = self.query_cache.get(key)
+                if isinstance(cached_val, dict):
+                    val = dict(cached_val)
             except Exception:  # noqa: BLE001
                 pass
-        val = self._precompute_mem.get(key)
-        return val if isinstance(val, dict) else None
+        if val is None:
+            mem_val = self._precompute_mem.get(key)
+            if isinstance(mem_val, dict):
+                val = dict(mem_val)
+        if not isinstance(val, dict):
+            return None
+        if isinstance(val.get("summary"), str):
+            guarded_summary = self._guard_summary(val.get("summary"))
+            if guarded_summary != val.get("summary"):
+                val["summary"] = guarded_summary
+                self._precompute_mem[key] = dict(val)
+                if self.query_cache is not None:
+                    try:
+                        self.query_cache.set(key, val, ttl=self.precompute_ttl_seconds)
+                    except Exception:  # noqa: BLE001
+                        pass
+        return val
 
     def _build_precompute_answer(self, pre: Dict[str, Any], query: str) -> str:
-        summary = str((pre or {}).get("summary") or "").strip()
+        summary = self._guard_summary(str((pre or {}).get("summary") or "").strip())
         rels = (pre or {}).get("relations") or []
         lines: List[str] = []
         if summary:
@@ -444,9 +503,20 @@ class QueryPipeline:
                 if s and r and o:
                     rel_lines.append(f"- {s} -[{r}]-> {o}")
             if rel_lines:
-                lines.append("已知图谱关系：")
+                lang = self._lang_bucket()
+                if lang == "en":
+                    lines.append("Known graph relations:")
+                elif lang == "ko":
+                    lines.append("확인된 그래프 관계:")
+                else:
+                    lines.append("已知图谱关系：")
                 lines.extend(rel_lines)
         if not lines:
+            lang = self._lang_bucket()
+            if lang == "en":
+                return f"No structured graph knowledge related to \"{query}\" was found."
+            if lang == "ko":
+                return f"\"{query}\"와 관련된 구조화된 그래프 정보를 찾지 못했습니다."
             return f"未在知识图谱中检索到与“{query}”相关的结构化信息。"
         return "\n".join(lines)
 
@@ -454,7 +524,7 @@ class QueryPipeline:
         g = graph or {}
         rels = g.get("relations") if isinstance(g.get("relations"), list) else []
         two_hop = g.get("two_hop") if isinstance(g.get("two_hop"), list) else []
-        summary = g.get("summary") if isinstance(g.get("summary"), str) else ""
+        summary = self._guard_summary(g.get("summary") if isinstance(g.get("summary"), str) else "")
         count = int(g.get("count", len(rels)) or 0)
         return {
             "used": bool(g.get("used", count > 0 or bool(summary) or len(two_hop) > 0)),
@@ -586,7 +656,7 @@ class QueryPipeline:
         normalized_query = query.strip().lower()
         normalized_query = re.sub(r"[?!.]+$", "", normalized_query)
         graph_version = self._graph_version()
-        cache_key = f"{normalized_query}|{graph_version}"
+        cache_key = self._query_cache_key(normalized_query, graph_version=graph_version)
         # 关闭 Redis 缓存以便调试 GraphRAG 行为
 
         logger.info("QueryPipeline running with mode=%s, query=%s", mode, query)
@@ -627,7 +697,7 @@ class QueryPipeline:
             t_llm = time.perf_counter()
             resp = self.answer_llm.complete(
                 self._with_lang_instruction(
-                    f"用户向你打招呼说：'{query}'。请作为一个专业的知识库助手礼貌且简短地回复。"
+                    self._greeting_prompt(query)
                 )
             )
             llm_ms = (time.perf_counter() - t_llm) * 1000
@@ -849,13 +919,13 @@ class QueryPipeline:
             result["debug_vector_chunks_count"] = chunks_count
             result["debug_context_tokens"] = context_tokens
             # UI 可视化：graph/debug 字段
-            result["graph"] = {
+            result["graph"] = self._normalize_graph_payload({
                 "used": graph_used,
                 "relations": triples[: self.max_graph_relations],
                 "count": relations_count,
                 "two_hop": self._build_graph_2hop(triples)[: self.max_two_hop],
                 "summary": graph_summary,
-            }
+            })
             result["debug"] = {
                 "context_tokens": context_tokens,
                 "vector_used": vector_used,
@@ -997,7 +1067,7 @@ class QueryPipeline:
         normalized_query = query.strip().lower()
         normalized_query = re.sub(r"[?!.]+$", "", normalized_query)
         graph_version = self._graph_version()
-        cache_key = f"{normalized_query}|{graph_version}"
+        cache_key = self._query_cache_key(normalized_query, graph_version=graph_version)
         # 关闭 Redis 缓存以便调试 GraphRAG 行为
 
         plan = self.planner.plan(query)
@@ -1051,7 +1121,7 @@ class QueryPipeline:
                     "precompute_hit": False,
                 }
             else:
-                _gp = f"用户向你打招呼说：'{query}'。请作为一个专业的知识库助手礼貌且简短地回复。"
+                _gp = self._greeting_prompt(query)
                 dbg = {
                     "context_tokens": max(1, len(_gp) // 2),
                     "vector_used": False,
@@ -1064,7 +1134,7 @@ class QueryPipeline:
             t_llm = time.perf_counter()
             resp = self.answer_llm.complete(
                 self._with_lang_instruction(
-                    f"用户向你打招呼说：'{query}'。请作为一个专业的知识库助手礼貌且简短地回复。"
+                    self._greeting_prompt(query)
                 )
             )
             llm_ms = (time.perf_counter() - t_llm) * 1000

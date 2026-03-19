@@ -1,8 +1,10 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
 import axios from 'axios';
+import { useTranslation } from 'react-i18next';
 
 const GraphExplorer = () => {
+    const { t, i18n } = useTranslation();
     const [graphData, setGraphData] = useState({ nodes: [], links: [] });
     const [initialGraph, setInitialGraph] = useState({ nodes: [], links: [] });
     const [loading, setLoading] = useState(false);
@@ -50,7 +52,9 @@ const GraphExplorer = () => {
             const [relationsRes, overviewRes, suggRes, typesRes] = await Promise.all([
                 axios.get('/api/graph/relations', { params: { limit: 200 } }),
                 axios.get('/api/graph/overview'),
-                axios.get('/api/graph/suggested_questions'),
+                axios.get('/api/graph/suggested_questions', {
+                    headers: { 'x-lang': i18n.language || 'zh' },
+                }),
                 axios.get('/api/graph/entity_types'),
             ]);
             const transformed = transformGraph(relationsRes.data || {});
@@ -64,7 +68,7 @@ const GraphExplorer = () => {
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [i18n.language]);
 
     const loadSubgraph = useCallback(async (entityName) => {
         if (!entityName) return;
@@ -97,6 +101,26 @@ const GraphExplorer = () => {
         }
     }, []);
 
+    const loadEntitiesPage = useCallback(async (type, page) => {
+        if (!type) return;
+        try {
+            const res = await axios.get('/api/graph/entities', {
+                params: { type, page, size: entitiesPageSize },
+            });
+            const data = res.data || {};
+            const newEntities = data.entities || [];
+            setEntities(prev => (page === 1 ? newEntities : [...prev, ...newEntities]));
+            setEntitiesTotal(data.total || 0);
+            setEntitiesPage(page);
+        } catch (e) {
+            if (page === 1) {
+                setEntities([]);
+                setEntitiesTotal(0);
+                setEntitiesPage(1);
+            }
+        }
+    }, [entitiesPageSize]);
+
     const handleNodeClick = (node) => {
         const name = node?.raw?.properties?.name || node?.name;
         if (name) {
@@ -118,33 +142,13 @@ const GraphExplorer = () => {
         ];
         if (sourceDoc) {
             lines.push(
-                `<div style="font-size:11px;opacity:0.8;margin-top:4px;">source: ${sourceDoc}</div>`,
+                `<div style="font-size:11px;opacity:0.8;margin-top:4px;">${t('source_label')}: ${sourceDoc}</div>`,
             );
         }
         return lines.join('');
     };
 
     const handleFindPath = async (e) => {
-    const loadEntitiesPage = async (type, page) => {
-        if (!type) return;
-        try {
-            const res = await axios.get('/api/graph/entities', {
-                params: { type, page, size: entitiesPageSize },
-            });
-            const data = res.data || {};
-            const newEntities = data.entities || [];
-            setEntities(prev => (page === 1 ? newEntities : [...prev, ...newEntities]));
-            setEntitiesTotal(data.total || 0);
-            setEntitiesPage(page);
-        } catch (e) {
-            if (page === 1) {
-                setEntities([]);
-                setEntitiesTotal(0);
-                setEntitiesPage(1);
-            }
-        }
-    };
-
         e.preventDefault();
         if (!pathA.trim() || !pathB.trim()) return;
         setPathLoading(true);
@@ -176,11 +180,10 @@ const GraphExplorer = () => {
                         color: '#e5e7eb',
                     }}
                 >
-                    加载中…
+                    {t('loading')}
                 </div>
             )}
             <div style={{ flex: 1, minWidth: 0, position: 'relative', display: 'flex', flexDirection: 'column' }}>
-                {/* 顶部：Graph Overview + Suggested Questions */}
                 <div
                     style={{
                         flexShrink: 0,
@@ -200,14 +203,14 @@ const GraphExplorer = () => {
                             border: '1px solid rgba(148,163,184,0.4)',
                         }}
                     >
-                        <div style={{ fontWeight: 600, marginBottom: 4 }}>Graph Overview</div>
+                        <div style={{ fontWeight: 600, marginBottom: 4 }}>{t('graph_overview')}</div>
                         {overview ? (
                             <>
-                                <div>Nodes: {overview.node_count}</div>
-                                <div>Relations: {overview.edge_count}</div>
+                                <div>{t('nodes_label')}: {overview.node_count}</div>
+                                <div>{t('relations_count_label')}: {overview.edge_count}</div>
                                 {overview.entity_types && overview.entity_types.length > 0 && (
                                     <div style={{ marginTop: 6 }}>
-                                        <div style={{ opacity: 0.8, marginBottom: 2 }}>Top entity types:</div>
+                                        <div style={{ opacity: 0.8, marginBottom: 2 }}>{t('top_entity_types')}</div>
                                         {overview.entity_types.slice(0, 4).map((t, idx) => (
                                             <div key={idx}>
                                                 {t.type}: {t.count}
@@ -217,7 +220,7 @@ const GraphExplorer = () => {
                                 )}
                             </>
                         ) : (
-                            <div style={{ opacity: 0.7 }}>暂无图谱统计数据。</div>
+                            <div style={{ opacity: 0.7 }}>{t('no_graph_overview_data')}</div>
                         )}
                     </div>
 
@@ -232,7 +235,7 @@ const GraphExplorer = () => {
                             overflow: 'auto',
                         }}
                     >
-                        <div style={{ fontWeight: 600, marginBottom: 4 }}>Suggested questions</div>
+                        <div style={{ fontWeight: 600, marginBottom: 4 }}>{t('suggested_questions_plain')}</div>
                         {suggestedQuestions && suggestedQuestions.length > 0 ? (
                             <ul style={{ paddingLeft: 18, margin: 0 }}>
                                 {suggestedQuestions.map((q, idx) => (
@@ -248,9 +251,7 @@ const GraphExplorer = () => {
                                             try {
                                                 localStorage.setItem('graphrag_suggested_question', q);
                                             } catch (e) { }
-                                            // 切换到聊天视图，由聊天页自动读取并发送
                                             window.scrollTo(0, 0);
-                                            // 依赖 App.jsx 中的 activeTab 逻辑，使用自定义事件通知切换
                                             window.dispatchEvent(new CustomEvent('graphrag_open_chat'));
                                         }}
                                     >
@@ -259,7 +260,7 @@ const GraphExplorer = () => {
                                 ))}
                             </ul>
                         ) : (
-                            <div style={{ opacity: 0.7 }}>暂时没有推荐问题。</div>
+                            <div style={{ opacity: 0.7 }}>{t('no_suggested_questions')}</div>
                         )}
                     </div>
                 </div>
@@ -283,14 +284,14 @@ const GraphExplorer = () => {
                         <input
                             value={pathA}
                             onChange={(e) => setPathA(e.target.value)}
-                            placeholder="Entity A"
+                            placeholder={t('entity_a_placeholder')}
                             style={{ width: 120, fontSize: 12, padding: '2px 6px', borderRadius: 4, border: '1px solid #4b5563', background: 'rgba(15,23,42,0.9)', color: '#e5e7eb' }}
                         />
                         <span style={{ opacity: 0.7 }}>→</span>
                         <input
                             value={pathB}
                             onChange={(e) => setPathB(e.target.value)}
-                            placeholder="Entity B"
+                            placeholder={t('entity_b_placeholder')}
                             style={{ width: 120, fontSize: 12, padding: '2px 6px', borderRadius: 4, border: '1px solid #4b5563', background: 'rgba(15,23,42,0.9)', color: '#e5e7eb' }}
                         />
                         <button
@@ -306,7 +307,7 @@ const GraphExplorer = () => {
                                 cursor: 'pointer',
                             }}
                         >
-                            {pathLoading ? 'Searching…' : 'Find path'}
+                            {pathLoading ? t('searching') : t('find_path')}
                         </button>
                         <button
                             type="button"
@@ -329,7 +330,7 @@ const GraphExplorer = () => {
                                 cursor: 'pointer',
                             }}
                         >
-                            Reset view
+                            {t('reset_view')}
                         </button>
                     </form>
                 </div>
@@ -365,7 +366,7 @@ const GraphExplorer = () => {
                 }}
             >
                 <div>
-                    <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>Entity Browser</div>
+                    <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>{t('entity_browser')}</div>
                     {entityTypes && entityTypes.length > 0 ? (
                         <div
                             style={{
@@ -432,28 +433,28 @@ const GraphExplorer = () => {
                                                 cursor: 'pointer',
                                             }}
                                         >
-                                            Load more
+                                            {t('load_more')}
                                         </button>
                                     )}
                                 </div>
                             ))}
                         </div>
                     ) : (
-                        <div style={{ opacity: 0.7 }}>暂无可浏览实体。</div>
+                        <div style={{ opacity: 0.7 }}>{t('no_browsable_entities')}</div>
                     )}
                 </div>
 
                 <div>
-                    <div style={{ fontWeight: 600, fontSize: 13 }}>节点详情</div>
+                    <div style={{ fontWeight: 600, fontSize: 13 }}>{t('node_details')}</div>
                     {selectedNode ? (
                         <>
                             <div>{nodeDisplayName(selectedNode)}</div>
                             <div style={{ opacity: 0.75, marginBottom: 4 }}>
                                 {(selectedNode.raw?.labels || []).join(', ') || selectedNode.type}
                             </div>
-                            <div style={{ fontWeight: 500, marginTop: 4 }}>相关文档</div>
+                            <div style={{ fontWeight: 500, marginTop: 4 }}>{t('related_documents')}</div>
                             {documents.length === 0 && (
-                                <div style={{ opacity: 0.7 }}>暂无关联文档或暂未索引。</div>
+                                <div style={{ opacity: 0.7 }}>{t('no_related_documents')}</div>
                             )}
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}>
                                 {documents.map((doc, idx) => (
@@ -468,14 +469,14 @@ const GraphExplorer = () => {
                                     >
                                         <div style={{ fontWeight: 500, marginBottom: 4 }}>{doc.file}</div>
                                         <div style={{ opacity: 0.8, fontSize: 11, maxHeight: 80, overflow: 'auto' }}>
-                                            {doc.text || '（无摘要文本）'}
+                                            {doc.text || t('no_summary_text')}
                                         </div>
                                     </div>
                                 ))}
                             </div>
                         </>
                     ) : (
-                        <div style={{ opacity: 0.7 }}>点击左侧图中的任意节点，查看关联文档。</div>
+                        <div style={{ opacity: 0.7 }}>{t('click_node_to_view_docs')}</div>
                     )}
                 </div>
             </div>
@@ -484,4 +485,3 @@ const GraphExplorer = () => {
 };
 
 export default GraphExplorer;
-

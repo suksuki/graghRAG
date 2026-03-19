@@ -168,6 +168,18 @@ def get_ingest_job_status_controller(job_id: str) -> Dict[str, Any]:
             err,
             "请重试上传，或减少单次上传文件大小",
         )["error"]
+    elif (
+        "unsupported file type" in msg
+        or "no extractable text" in msg
+        or "legacy .doc parsing requires" in msg
+        or "parse" in msg
+    ):
+        payload = error_payload(
+            ErrorCode.PARSE_ERROR,
+            "文档解析失败",
+            err,
+            "请检查文件内容是否完整，或将文档转换为 DOCX / TXT 后重试",
+        )["error"]
     elif "graph" in msg:
         payload = error_payload(
             ErrorCode.GRAPH_BUILD_FAILED,

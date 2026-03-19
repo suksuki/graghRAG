@@ -14,9 +14,9 @@ import nest_asyncio
 import signal
 from contextlib import contextmanager
 
-from llama_index.core import SimpleDirectoryReader
 from llama_index.core.node_parser import SentenceSplitter
 
+from core.document_loader import DocumentLoader, SUPPORTED_EXTENSIONS
 from core.graph_engine import GraphEngine
 from core.vector_store import VectorEngine
 from configs.config import settings
@@ -69,9 +69,10 @@ def _get_vector_indexed_files(vector_engine: VectorEngine) -> set:
 
 
 class SMEIngestor:
-    def __init__(self):
-        self.graph_engine = GraphEngine()
-        self.vector_engine = VectorEngine()
+    def __init__(self, graph_engine: GraphEngine | None = None, vector_engine: VectorEngine | None = None):
+        self.graph_engine = graph_engine or GraphEngine()
+        self.vector_engine = vector_engine or VectorEngine()
+        self.document_loader = DocumentLoader()
         self.splitter = SentenceSplitter(
             chunk_size=settings.CHUNK_SIZE,
             chunk_overlap=settings.CHUNK_OVERLAP,
@@ -111,7 +112,7 @@ class SMEIngestor:
             f
             for f in os.listdir(path)
             if os.path.splitext(f)[1].lower()
-            in {".pdf", ".docx", ".pptx", ".xlsx", ".txt", ".jpg", ".png", ".jpeg", ".xdmp"}
+            in SUPPORTED_EXTENSIONS
         ]
 
         # 需要写向量的新文件
@@ -138,11 +139,8 @@ class SMEIngestor:
             file_names=files_to_load,
         )
 
-        # 读取需要处理的文件
-        reader = SimpleDirectoryReader(
-            input_files=[os.path.join(path, f) for f in files_to_load]
-        )
-        documents = reader.load_data()
+        input_files = [os.path.join(path, f) for f in files_to_load]
+        documents = self.document_loader.load_many(input_files)
         logger.info(f"Loaded {len(documents)} document objects from {len(files_to_load)} files")
         update(f"Loaded {len(documents)} docs, splitting... (20%)", 20)
 

@@ -42,7 +42,10 @@ def test_is_allowed_extension():
     assert is_allowed_extension("x.pdf") is True
     assert is_allowed_extension("x.PDF") is True
     assert is_allowed_extension("x.docx") is True
+    assert is_allowed_extension("x.doc") is True
     assert is_allowed_extension("x.txt") is True
+    assert is_allowed_extension("x.md") is True
+    assert is_allowed_extension("x.html") is True
     assert is_allowed_extension("x.jpg") is True
     assert is_allowed_extension("x.png") is True
     assert is_allowed_extension("x.exe") is False
@@ -75,4 +78,7 @@ def test_constants():
     assert MAX_FILES_PER_UPLOAD > 0
     assert MAX_FILE_SIZE_BYTES > 0
     assert ".pdf" in ALLOWED_EXTENSIONS
+    assert ".doc" in ALLOWED_EXTENSIONS
+    assert ".md" in ALLOWED_EXTENSIONS
+    assert ".html" in ALLOWED_EXTENSIONS
     assert ".txt" in ALLOWED_EXTENSIONS

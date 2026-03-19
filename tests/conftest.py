@@ -13,10 +13,14 @@ def pytest_configure(config):
 
 
 @pytest.fixture(autouse=True)
-def clean_test_environment():
+def clean_test_environment(request):
     """
     在每个测试前清理图数据库、向量库以及原始文件目录，避免历史数据干扰回归测试。
     """
+    if request.node.get_closest_marker("integration") is None:
+        yield
+        return
+
     # A. 清理 Neo4j 图
     try:
         with graph_engine.graph_store._driver.session() as session:

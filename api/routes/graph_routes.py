@@ -77,11 +77,12 @@ def entity_types():
 
 
 @router.get("/suggested_questions")
-def suggested_questions(limit: int = Query(10, ge=1, le=50)):
+def suggested_questions(request: Request, limit: int = Query(10, ge=1, le=50)):
     """
     返回一组基于图关系自动生成的推荐问题，帮助用户了解可以问什么。
     """
-    return suggested_questions_controller(limit=limit)
+    lang = (request.headers.get("x-lang") or "zh").strip().lower()
+    return suggested_questions_controller(limit=limit, lang=lang)
 
 
 @router.get("/suggestions")

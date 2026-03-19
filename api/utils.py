@@ -5,13 +5,11 @@ import os
 import re
 import html
 
+from core.document_loader import SUPPORTED_EXTENSIONS
+
 # 允许的文档扩展名（与 ingestion 中一致）
 # 增加 .xdmp（部分韩文/MarkLogic 导出会用到，按文本处理）
-ALLOWED_EXTENSIONS = {
-    ".pdf", ".docx", ".pptx", ".xlsx",
-    ".txt", ".jpg", ".png", ".jpeg",
-    ".xdmp",
-}
+ALLOWED_EXTENSIONS = set(SUPPORTED_EXTENSIONS)
 
 # 单文件最大大小（字节），默认 50MB
 MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024

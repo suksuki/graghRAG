@@ -29,7 +29,7 @@ const App = () => {
 
     const triggerFollowupEntityQuery = (entity) => {
         try {
-            localStorage.setItem('graphrag_suggested_question', `Tell me more about ${entity}`);
+            localStorage.setItem('graphrag_suggested_question', t('followup_entity_query', { entity }));
         } catch (e) { }
         window.scrollTo(0, 0);
         window.dispatchEvent(new CustomEvent('graphrag_open_chat'));
@@ -41,10 +41,47 @@ const App = () => {
         ((msg?.graph?.two_hop?.length ?? 0) > 0) ||
         ((msg?.debug?.graph_relations_count ?? 0) > 0)
     );
+
+    const getErrorUI = (code) => {
+        switch (code) {
+            case 'FILE_TOO_LARGE':
+                return {
+                    icon: '📦',
+                    title: t('error_ui_file_too_large_title'),
+                    color: '#60a5fa',
+                    bg: 'rgba(59,130,246,0.14)',
+                    border: 'rgba(96,165,250,0.35)',
+                };
+            case 'UNSUPPORTED_FILE_TYPE':
+                return {
+                    icon: '📄',
+                    title: t('error_ui_unsupported_type_title'),
+                    color: '#f59e0b',
+                    bg: 'rgba(245,158,11,0.14)',
+                    border: 'rgba(251,191,36,0.35)',
+                };
+            default:
+                return {
+                    icon: '⚠️',
+                    title: t('error_ui_system_title'),
+                    color: '#f87171',
+                    bg: 'rgba(248,113,113,0.14)',
+                    border: 'rgba(248,113,113,0.35)',
+                };
+        }
+    };
+
     const openErrorModal = (errorObj) => {
         if (!errorObj) return;
+        const code = errorObj.code || 'UNKNOWN_ERROR';
+        const ui = getErrorUI(code);
         setErrorModal({
-            code: errorObj.code || 'UNKNOWN_ERROR',
+            code,
+            icon: ui.icon,
+            title: ui.title,
+            color: ui.color,
+            bg: ui.bg,
+            border: ui.border,
             message: errorObj.message || (t('upload_failed') || '操作失败'),
             detail: errorObj.detail || '',
             suggestion: errorObj.suggestion || '',
@@ -90,7 +127,7 @@ const App = () => {
             setIngestionStatus(prev => ({
                 ...prev,
                 status: 'failed',
-                message: '无法获取解析状态，请检查后端服务',
+                message: t('ingestion_status_fetch_failed'),
             }));
         }
     };
@@ -129,7 +166,7 @@ const App = () => {
     };
 
     const saveSettings = async () => {
-        setSaveStatus('Saving...');
+        setSaveStatus(t('saving'));
         try {
             await axios.post('/api/settings/update', {
                 llm_model: appSettings.llm_model,
@@ -137,16 +174,16 @@ const App = () => {
                 embedding_model: appSettings.embedding_model,
                 ollama_base_url: appSettings.ollama_base_url
             });
-            setSaveStatus('Settings saved successfully!');
+            setSaveStatus(t('settings_saved'));
             fetchAppSettings();
             setTimeout(() => setSaveStatus(null), 3000);
         } catch (e) {
-            setSaveStatus('Failed to save settings.');
+            setSaveStatus(t('settings_save_failed'));
         }
     };
 
     const testConnection = async (type) => {
-        setTestResult({ type, msg: 'Testing...' });
+        setTestResult({ type, msg: t('testing') });
         try {
             const payload = {
                 type,
@@ -159,14 +196,13 @@ const App = () => {
                 fetchAvailableModels(appSettings.ollama_base_url);
             }
         } catch (e) {
-            setTestResult({ type, msg: 'Connection failed', success: false });
+            setTestResult({ type, msg: t('connection_failed'), success: false });
         }
     };
 
-    const handleQuery = async (e) => {
-        e.preventDefault();
-        if (!query.trim() || loading) return;
-        const userQuery = query;
+    const submitQuery = async (inputQuery) => {
+        const userQuery = (inputQuery || '').trim();
+        if (!userQuery || loading) return;
         setMessages(prev => [...prev, { role: 'user', text: userQuery }]);
         setQuery('');
         setLoading(true);
@@ -203,6 +239,7 @@ const App = () => {
                             const lat = event.pipeline_latency_ms || {};
                             if (event.first_token_ms != null) lat.first_token_ms = event.first_token_ms;
                             if (event.total_ms != null) lat.total_ms = event.total_ms;
+                            const finalLang = event.lang_final || i18n.language || 'zh';
                             const normalizedGraph = {
                                 relations: Array.isArray(event.graph?.relations) ? event.graph.relations : [],
                                 summary: typeof event.graph?.summary === 'string' ? event.graph.summary : '',
@@ -223,13 +260,17 @@ const App = () => {
                                     pipeline_latency_ms: lat,
                                     graph: normalizedGraph,
                                     debug: event.debug ?? null,
+                                    lang_ui: event.lang_ui || i18n.language || 'zh',
+                                    lang_detected: event.lang_detected || finalLang,
+                                    lang_final: finalLang,
+                                    suggest_switch: Boolean(event.suggest_switch),
                                 };
                                 return next;
                             });
                             if (entity) {
                                 try {
                                     const sres = await fetch(`/api/graph/suggestions?entity=${encodeURIComponent(entity)}`, {
-                                        headers: { 'x-lang': i18n.language || 'zh' },
+                                        headers: { 'x-lang': finalLang },
                                     });
                                     if (sres.ok) {
                                         const sdata = await sres.json();
@@ -256,6 +297,11 @@ const App = () => {
         } finally { setLoading(false); }
     };
 
+    const handleQuery = async (e) => {
+        e.preventDefault();
+        await submitQuery(query);
+    };
+
     // 当从 Graph Studio 选择推荐问题时，自动填充并发送
     useEffect(() => {
         if (activeTab !== 'chat') return;
@@ -264,17 +310,15 @@ const App = () => {
             if (stored && stored.trim()) {
                 setQuery(stored);
                 localStorage.removeItem('graphrag_suggested_question');
-                // 模拟一次提交
                 setTimeout(() => {
-                    const fakeEvent = { preventDefault: () => {} };
-                    handleQuery(fakeEvent);
+                    submitQuery(stored);
                 }, 0);
             }
         } catch (e) { }
     }, [activeTab]);
 
     const deleteDocument = async (name) => {
-        if (!window.confirm(`确定要删除文档 ${name} 吗？`)) return;
+        if (!window.confirm(t('delete_confirm', { name }))) return;
         try {
             await axios.delete(`/api/documents/${encodeURIComponent(name)}`);
             fetchDocuments(); // Refresh list
@@ -284,9 +328,9 @@ const App = () => {
     };
 
     const formatSize = (bytes) => {
-        if (bytes < 1024) return bytes + ' Bytes';
-        if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
-        return (bytes / 1048576).toFixed(1) + ' MB';
+        if (bytes < 1024) return `${bytes} ${t('unit_bytes')}`;
+        if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} ${t('unit_kb')}`;
+        return `${(bytes / 1048576).toFixed(1)} ${t('unit_mb')}`;
     };
 
     const [isUploading, setIsUploading] = useState(false);
@@ -300,16 +344,26 @@ const App = () => {
         const files = e.target.files;
         if (!files.length) return;
         const MAX_FILE_SIZE = 50 * 1024 * 1024;
-        const ALLOWED = ['.pdf', '.docx', '.pptx', '.xlsx', '.txt', '.jpg', '.png', '.jpeg', '.xdmp'];
+        const ALLOWED = ['.pdf', '.docx', '.doc', '.pptx', '.xlsx', '.txt', '.md', '.html', '.jpg', '.png', '.jpeg', '.xdmp'];
         for (let i = 0; i < files.length; i++) {
             const f = files[i];
             const ext = (f.name.slice(f.name.lastIndexOf('.')) || '').toLowerCase();
             if (!ALLOWED.includes(ext)) {
-                alert(`上传失败: 文件类型不支持 (${f.name})`);
+                openErrorModal({
+                    code: 'UNSUPPORTED_FILE_TYPE',
+                    message: t('unsupported_file_type_message'),
+                    detail: t('upload_file_detail', { name: f.name }),
+                    suggestion: t('unsupported_file_type_suggestion'),
+                });
                 return;
             }
             if (f.size > MAX_FILE_SIZE) {
-                alert(`上传失败: 文件过大，超过 50MB (${f.name})`);
+                openErrorModal({
+                    code: 'FILE_TOO_LARGE',
+                    message: t('file_too_large_message', { size: 50 }),
+                    detail: t('upload_file_size_detail', { name: f.name, size: formatSize(f.size) }),
+                    suggestion: t('file_too_large_suggestion'),
+                });
                 return;
             }
         }
@@ -335,7 +389,7 @@ const App = () => {
             fetchIngestionStatus();
             if (names.length > 0) setTimeout(() => setLastUploadedFiles([]), 8000);
         } catch (e) {
-            openErrorModal(e?.response?.data?.error || { message: t('upload_failed'), detail: e?.response?.data?.detail || e?.message || 'unknown error' });
+            openErrorModal(e?.response?.data?.error || { message: t('upload_failed'), detail: e?.response?.data?.detail || e?.message || t('unknown_error') });
         } finally {
             setIsUploading(false);
             setUploadProgress(0);
@@ -360,9 +414,9 @@ const App = () => {
                     setIngestionStatus(prev => ({
                         ...prev,
                         status: 'failed',
-                        message: failed?.error?.message || '上传处理失败',
+                        message: failed?.error?.message || t('upload_processing_failed'),
                     }));
-                    openErrorModal(failed.error || { message: '上传处理失败', detail: 'unknown error' });
+                    openErrorModal(failed.error || { message: t('upload_processing_failed'), detail: t('unknown_error') });
                 }
                 const allDone = statuses.every(s => s.status === 'done' || s.status === 'failed');
                 if (allDone) {
@@ -374,9 +428,9 @@ const App = () => {
                 setIngestionStatus(prev => ({
                     ...prev,
                     status: 'failed',
-                    message: e?.response?.data?.detail || e?.message || '轮询任务状态失败',
+                    message: e?.response?.data?.detail || e?.message || t('polling_status_failed'),
                 }));
-                openErrorModal(e?.response?.data?.error || { message: '轮询任务状态失败', detail: e?.message || '' });
+                openErrorModal(e?.response?.data?.error || { message: t('polling_status_failed'), detail: e?.message || '' });
             }
         }, 1500);
         return () => { stopped = true; clearInterval(timer); };
@@ -428,7 +482,7 @@ const App = () => {
                                 ingestionStatus.status === 'processing'
                                     ? (ingestionStatus.message || t('analyzing'))
                                     : ingestionStatus.status === 'failed'
-                                        ? (ingestionStatus.message || '解析失败')
+                                        ? (ingestionStatus.message || t('ingestion_failed'))
                                         : t('idle')
                             }
                         </span>
@@ -462,7 +516,7 @@ const App = () => {
                     )}
                     {ingestionStatus.status === 'failed' && (
                         <div style={{ marginTop: '8px', fontSize: '12px', color: '#fca5a5', lineHeight: 1.4 }}>
-                            ❌ {ingestionStatus.message || '解析失败，请重试上传或检查后端日志'}
+                            ❌ {ingestionStatus.message || t('ingestion_failed_retry')}
                         </div>
                     )}
                     {lastUploadedFiles.length > 0 && (
@@ -499,7 +553,10 @@ const App = () => {
                 {errorModal && (
                     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
                         <div className="glass" style={{ width: 'min(560px, 92vw)', padding: '18px', borderRadius: '14px' }}>
-                            <div style={{ fontWeight: 700, fontSize: '18px', marginBottom: '10px' }}>❌ {t('upload_failed_title') || '上传失败'}</div>
+                            <div style={{ fontWeight: 700, fontSize: '18px', marginBottom: '10px', color: errorModal.color, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span>{errorModal.icon}</span>
+                                <span>{errorModal.title || t('upload_failed_title')}</span>
+                            </div>
                             <div style={{ fontSize: '14px', marginBottom: '10px' }}>{errorModal.message}</div>
                             {errorModal.detail ? (
                                 <details style={{ marginBottom: '10px', fontSize: '12px', opacity: 0.9 }}>
@@ -508,7 +565,7 @@ const App = () => {
                                 </details>
                             ) : null}
                             {errorModal.suggestion ? (
-                                <div style={{ marginBottom: '14px', padding: '8px 10px', borderRadius: '8px', background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.3)' }}>
+                                <div style={{ marginBottom: '14px', padding: '8px 10px', borderRadius: '8px', background: errorModal.bg, border: `1px solid ${errorModal.border}` }}>
                                     💡 {errorModal.suggestion}
                                 </div>
                             ) : null}
@@ -531,15 +588,15 @@ const App = () => {
                                                 <>
                                                 <div style={{ marginBottom: '8px', fontSize: '12px', opacity: 0.9 }}>
                                                     {hasGraphDataMsg(msg)
-                                                        ? '✅ Answer powered by Knowledge Graph'
-                                                        : '⚠️ Answer based on text retrieval only'}
+                                                        ? t('answer_powered_by_graph')
+                                                        : t('answer_based_on_text_only')}
                                                 </div>
                                                 </>
                                             )}
                                             <div>{msg.text}</div>
                                             {msg.role === 'assistant' && Array.isArray(msg.suggestions) && msg.suggestions.length > 0 && (
                                                 <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
-                                                    <div style={{ fontWeight: 600, fontSize: '12px', marginBottom: '6px' }}>💡 推荐问题</div>
+                                                    <div style={{ fontWeight: 600, fontSize: '12px', marginBottom: '6px' }}>{t('suggested_questions_title')}</div>
                                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '12px' }}>
                                                         {msg.suggestions.slice(0, 6).map((q, qidx) => (
                                                             <button
@@ -547,7 +604,7 @@ const App = () => {
                                                                 type="button"
                                                                 onClick={() => {
                                                                     setQuery(q);
-                                                                    setTimeout(() => handleQuery({ preventDefault: () => {} }), 0);
+                                                                    setTimeout(() => submitQuery(q), 0);
                                                                 }}
                                                                 style={{
                                                                     textAlign: 'left',
@@ -574,9 +631,9 @@ const App = () => {
                                                         if (!hasGraphData) {
                                                             return (
                                                                 <div style={{ fontSize: '12px', opacity: 0.85 }}>
-                                                                    ⚠️ No structured knowledge found in documents
+                                                                    {t('no_structured_knowledge')}
                                                                     <div style={{ marginTop: '6px', opacity: 0.8 }}>
-                                                                        💡 Try asking more specific questions
+                                                                        {t('try_specific_questions')}
                                                                     </div>
                                                                 </div>
                                                             );
@@ -585,28 +642,28 @@ const App = () => {
                                                         return (
                                                             <>
                                                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                                                                    <div style={{ fontWeight: 600, fontSize: '12px' }}>🧠 Knowledge Graph</div>
+                                                                    <div style={{ fontWeight: 600, fontSize: '12px' }}>{t('knowledge_graph_title')}</div>
                                                                     {Array.isArray(msg.graph?.relations) && msg.graph.relations.length > 8 && (
                                                                         <button
                                                                             type="button"
                                                                             onClick={() => setExpandedGraph(prev => ({ ...prev, [i]: !prev[i] }))}
                                                                             style={{ background: 'transparent', border: '1px solid rgba(148,163,184,0.4)', color: 'inherit', borderRadius: '8px', padding: '2px 8px', fontSize: '11px', cursor: 'pointer', opacity: 0.9 }}
                                                                         >
-                                                                            {expandedGraph[i] ? '收起' : '展开'}
+                                                                            {expandedGraph[i] ? t('collapse') : t('expand')}
                                                                         </button>
                                                                     )}
                                                                 </div>
 
                                                                 {msg.graph?.summary && (
                                                                     <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: '1px solid rgba(255,255,255,0.08)', fontSize: '12px' }}>
-                                                                        <div style={{ fontWeight: 600, marginBottom: '4px' }}>📌 Key Insight</div>
+                                                                        <div style={{ fontWeight: 600, marginBottom: '4px' }}>{t('key_insight_title')}</div>
                                                                         <div style={{ opacity: 0.9 }}>{msg.graph.summary}</div>
                                                                     </div>
                                                                 )}
 
                                                                 {Array.isArray(msg.graph?.two_hop) && msg.graph.two_hop.length > 0 && (
                                                                     <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: '1px solid rgba(255,255,255,0.08)', fontSize: '12px' }}>
-                                                                        <div style={{ fontWeight: 600, marginBottom: '6px' }}>🔎 2-hop</div>
+                                                                        <div style={{ fontWeight: 600, marginBottom: '6px' }}>{t('two_hop_title')}</div>
                                                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                                                                             {msg.graph.two_hop.slice(0, 6).map((row, ridx) => (
                                                                                 <div key={ridx} style={{ opacity: 0.9 }}>
@@ -634,7 +691,7 @@ const App = () => {
                                                                         <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: '1px solid rgba(255,255,255,0.08)', fontSize: '12px' }}>
                                                                             {products.length > 0 && (
                                                                                 <div style={{ marginBottom: '10px' }}>
-                                                                                    <div style={{ fontWeight: 600, marginBottom: '6px' }}>📦 Products</div>
+                                                                                    <div style={{ fontWeight: 600, marginBottom: '6px' }}>{t('products_title')}</div>
                                                                                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                                                                                         {products.map((p, pidx) => (
                                                                                             <span
@@ -650,7 +707,7 @@ const App = () => {
                                                                             )}
                                                                             {industries.length > 0 && (
                                                                                 <div>
-                                                                                    <div style={{ fontWeight: 600, marginBottom: '6px' }}>🏭 Industries</div>
+                                                                                    <div style={{ fontWeight: 600, marginBottom: '6px' }}>{t('industries_title')}</div>
                                                                                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                                                                                         {industries.map((d, didx) => (
                                                                                             <span
@@ -670,7 +727,7 @@ const App = () => {
 
                                                                 {Array.isArray(msg.graph?.relations) && msg.graph.relations.length > 0 && (
                                                                     <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
-                                                                        <div style={{ fontWeight: 600, fontSize: '12px', marginBottom: '6px' }}>🔗 Relations</div>
+                                                                        <div style={{ fontWeight: 600, fontSize: '12px', marginBottom: '6px' }}>{t('relations_title')}</div>
                                                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '12px' }}>
                                                                             {(expandedGraph[i] ? msg.graph.relations : msg.graph.relations.slice(0, 8)).map((r, ridx) => (
                                                                                 <div key={ridx} style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
@@ -714,25 +771,25 @@ const App = () => {
                                             {msg.pipeline_latency_ms && (
                                                 <div className="pipeline-latency" style={{ marginTop: '8px', paddingTop: '6px', borderTop: '1px solid rgba(255,255,255,0.08)', fontSize: '11px', opacity: 0.85, fontFamily: 'monospace' }}>
                                                     ⏱ {[
-                                                        msg.pipeline_latency_ms.first_token_ms != null && `首字 ${(msg.pipeline_latency_ms.first_token_ms / 1000).toFixed(1)}s`,
+                                                        msg.pipeline_latency_ms.first_token_ms != null && `${t('first_token_short')} ${(msg.pipeline_latency_ms.first_token_ms / 1000).toFixed(1)}s`,
                                                         `planner ${msg.pipeline_latency_ms.planner_ms ?? 0}ms`,
                                                         `vector ${msg.pipeline_latency_ms.vector_retrieval_ms ?? 0}ms`,
                                                         `graph ${msg.pipeline_latency_ms.graph_retrieval_ms ?? 0}ms`,
                                                         `LLM ${((msg.pipeline_latency_ms.llm_generation_ms ?? 0) / 1000).toFixed(1)}s`,
-                                                        `总 ${((msg.pipeline_latency_ms.total_ms ?? 0) / 1000).toFixed(1)}s`,
+                                                        `${t('total_time_short')} ${((msg.pipeline_latency_ms.total_ms ?? 0) / 1000).toFixed(1)}s`,
                                                     ].filter(Boolean).join(' · ')}
                                                     {(msg.pipeline_latency_ms.prompt_chars != null || msg.pipeline_latency_ms.prompt_tokens != null) && (
                                                         <div style={{ marginTop: '4px', opacity: 0.75 }}>
-                                                            Prompt: {msg.pipeline_latency_ms.prompt_chars ?? 0} 字符{msg.pipeline_latency_ms.prompt_tokens != null ? ` · ~${msg.pipeline_latency_ms.prompt_tokens} token` : ''}
+                                                            {t('prompt_label')}: {msg.pipeline_latency_ms.prompt_chars ?? 0} {t('characters_unit')}{msg.pipeline_latency_ms.prompt_tokens != null ? ` · ~${msg.pipeline_latency_ms.prompt_tokens} ${t('tokens_unit')}` : ''}
                                                         </div>
                                                     )}
                                                 </div>
                                             )}
                                             {msg.role === 'assistant' && (
                                                 <div style={{ marginTop: '6px', fontSize: '11px', opacity: 0.8, fontFamily: 'monospace' }}>
-                                                    ⚡ Context: {msg.debug?.context_tokens ?? 0}<br />
-                                                    🧠 Graph relations: {msg.graph?.count ?? 0}<br />
-                                                    📄 Chunks used: {msg.debug?.chunks_used ?? 0}
+                                                    ⚡ {t('debug_context')}: {msg.debug?.context_tokens ?? 0}<br />
+                                                    🧠 {t('debug_graph_relations')}: {msg.graph?.count ?? 0}<br />
+                                                    📄 {t('debug_chunks_used')}: {msg.debug?.chunks_used ?? 0}
                                                 </div>
                                             )}
                                         </div>

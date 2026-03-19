@@ -2,6 +2,7 @@ import logging
 from typing import Any, Dict, List
 
 from api.deps import graph_engine
+from core.lang_detect import detect_lang, normalize_lang
 from core.query_cache import QueryCache, GRAPH_VERSION
 from core.entity_normalization import normalize_entity
 
@@ -13,6 +14,82 @@ except Exception:  # noqa: BLE001
 
 _GRAPH_TTL = 600
 _index_ensured = False
+
+
+def _lang_bucket(lang: str | None) -> str:
+    return normalize_lang(lang, default="en")
+
+
+def _parse_question_lines(raw: str, limit: int = 5) -> List[str]:
+    questions: List[str] = []
+    for line in (raw or "").splitlines():
+        q = line.strip().lstrip("-").strip()
+        if not q:
+            continue
+        if len(q) < 3:
+            continue
+        if len(q) > 80:
+            q = q[:80].rstrip()
+        questions.append(q)
+        if len(questions) >= limit:
+            break
+    return questions
+
+
+def _questions_match_lang(questions: List[str], lang: str) -> bool:
+    if not questions:
+        return True
+    expected = _lang_bucket(lang)
+    actual = detect_lang(" ".join(questions))
+    return actual == expected
+
+
+def _rewrite_questions(raw_questions: List[str], lang: str) -> List[str]:
+    if not raw_questions:
+        return []
+    expected = _lang_bucket(lang)
+    language_name = {"zh": "Chinese", "en": "English", "ko": "Korean"}.get(expected, "English")
+    joined = "\n".join(raw_questions[:5])
+    prompt = (
+        f"Rewrite the following questions into {language_name}.\n"
+        "Keep the meaning unchanged.\n"
+        "Return 3-5 natural clickable questions.\n"
+        "One question per line. No numbering. No explanation.\n\n"
+        f"Questions:\n{joined}\n"
+    )
+    try:
+        rewritten = str(graph_engine.llm.complete(prompt))
+    except Exception:  # noqa: BLE001
+        return []
+    rewritten_questions = _parse_question_lines(rewritten)
+    if _questions_match_lang(rewritten_questions, expected):
+        return rewritten_questions[:5]
+    return []
+
+
+def _fallback_questions(entity: str, lang: str, products: List[str] | None = None, domains: List[str] | None = None) -> List[str]:
+    expected = _lang_bucket(lang)
+    products = list(dict.fromkeys(products or []))[:5]
+    domains = list(dict.fromkeys(domains or []))[:5]
+    product = products[0] if products else entity
+    domain = domains[0] if domains else None
+    if expected == "en":
+        return [
+            f"What are the core products of {entity}?",
+            f"What industry use-cases does {entity} have in {domain if domain else 'its target industries'}?",
+            f"What problems can {product} solve?",
+        ]
+    if expected == "ko":
+        return [
+            f"{entity}의 핵심 제품은 무엇인가요?",
+            f"{entity}는 {domain if domain else '주요 산업'}에서 어떤 활용 사례가 있나요?",
+            f"{product}는 어떤 문제를 해결하는 데 적합한가요?",
+        ]
+    return [
+        f"{entity} 的核心产品有哪些？",
+        f"{entity} 在 {domain if domain else '行业'} 有哪些落地案例？",
+        f"{product} 适合解决什么问题？",
+    ]
 
 
 def _ensure_entity_name_index() -> None:
@@ -250,7 +327,7 @@ def entity_types_controller() -> Dict[str, Any]:
     return {"types": types}
 
 
-def suggested_questions_controller(limit: int = 10) -> Dict[str, List[str]]:
+def suggested_questions_controller(limit: int = 10, lang: str = "zh") -> Dict[str, List[str]]:
     """
     根据图中的关系自动生成一组“推荐问题”。
     """
@@ -263,12 +340,18 @@ def suggested_questions_controller(limit: int = 10) -> Dict[str, List[str]]:
     records = _run_cypher(cypher, {"limit": limit})
 
     questions: List[str] = []
+    lang_bucket = _lang_bucket(lang)
     for rec in records:
         a_name = rec.get("a_name")
         b_name = rec.get("b_name")
         if not a_name or not b_name:
             continue
-        q = f"How is {a_name} related to {b_name}?"
+        if lang_bucket == "en":
+            q = f"How is {a_name} related to {b_name}?"
+        elif lang_bucket == "ko":
+            q = f"{a_name}와 {b_name}는 어떤 관계인가요?"
+        else:
+            q = f"{a_name} 和 {b_name} 是什么关系？"
         questions.append(q)
 
     # 去重
@@ -289,10 +372,12 @@ def entity_suggestions_controller(entity: str, limit: int = 5, lang: str = "zh")
     norm_entity = normalize_entity(entity)
     resolved_node = _resolve_entity_node_name(entity) or (entity or "").strip()
     canonical = _resolve_canonical_entity(entity) or resolved_node
-    cache_key = f"graph:suggestions:{norm_entity or canonical}|{GRAPH_VERSION}"
+    lang_bucket = _lang_bucket(lang)
+    lang_key = (lang or "zh").strip().lower()
+    cache_key = f"graph:suggestions:{norm_entity or canonical}|{lang_key}|{GRAPH_VERSION}"
     if _graph_cache is not None:
         cached = _graph_cache.get(cache_key)
-        if isinstance(cached, dict):
+        if isinstance(cached, dict) and _questions_match_lang(cached.get("questions") or [], lang_bucket):
             return cached
     cypher = """
     MATCH (a:Entity {name: $entity})
@@ -353,7 +438,7 @@ def entity_suggestions_controller(entity: str, limit: int = 5, lang: str = "zh")
             ds = []
         two_hop_rows.append({"product": p, "domains": [x for x in ds if x]})
 
-    if (lang or "zh").startswith("en"):
+    if lang_bucket == "en":
         prompt = (
             "Answer ONLY in English. Do not use Chinese.\n"
             "Generate 3-5 natural clickable questions based on graph relations.\n"
@@ -361,6 +446,18 @@ def entity_suggestions_controller(entity: str, limit: int = 5, lang: str = "zh")
             "- no duplicates\n"
             "- cover products, industries, comparison, use-cases\n"
             "- one question per line, no numbering, no explanation\n\n"
+            f"entity: {canonical}\n"
+            f"relations: {relations}\n"
+            f"two_hop: {two_hop_rows}\n"
+        )
+    elif lang_bucket == "ko":
+        prompt = (
+            "항상 한국어로 답변하세요. 영어와 중국어를 사용하지 마세요.\n"
+            "당신은 기업 지식 도우미입니다. 주어진 회사/엔터티와 그래프 정보를 바탕으로 자연스럽고 클릭 가능한 한국어 질문 3-5개를 생성하세요.\n"
+            "요구사항:\n"
+            "- 중복 금지, 제품별 기계적인 나열 금지\n"
+            "- 핵심 제품, 산업 적용, 제품 비교/차이점, 실제 활용 시나리오를 고르게 포함\n"
+            "- 한 줄에 질문 하나씩만 출력하고 번호나 설명은 쓰지 마세요\n\n"
             f"entity: {canonical}\n"
             f"relations: {relations}\n"
             f"two_hop: {two_hop_rows}\n"
@@ -379,44 +476,31 @@ def entity_suggestions_controller(entity: str, limit: int = 5, lang: str = "zh")
         )
 
     try:
-        from api.deps import graph_engine as _ge
-        raw = str(_ge.llm.complete(prompt))
+        raw = str(graph_engine.llm.complete(prompt))
     except Exception:  # noqa: BLE001
         raw = ""
 
-    qs: List[str] = []
-    for line in (raw or "").splitlines():
-        q = line.strip().lstrip("-").strip()
-        if not q:
-            continue
-        if len(q) < 3:
-            continue
-        if len(q) > 80:
-            q = q[:80].rstrip()
-        qs.append(q)
-        if len(qs) >= 5:
-            break
+    qs = _parse_question_lines(raw)
+    products = [r.get("target") for r in relations if r.get("type") == "PROVIDES" and r.get("target")]
+    domains = []
+    for row in two_hop_rows:
+        for d in row.get("domains") or []:
+            domains.append(d)
 
-    if not qs:
-        products = [r.get("target") for r in relations if r.get("type") == "PROVIDES" and r.get("target")]
-        domains = []
-        for row in two_hop_rows:
-            for d in row.get("domains") or []:
-                domains.append(d)
-        products = list(dict.fromkeys(products))[:5]
-        domains = list(dict.fromkeys(domains))[:5]
-        if (lang or "zh").startswith("en"):
-            qs = [
-                f"What are the core products of {canonical}?",
-                f"What industry use-cases does {canonical} have in {domains[0] if domains else 'its target industries'}?",
-                f"What problems can {products[0] if products else canonical} solve?",
-            ]
-        else:
-            qs = [
-                f"{canonical} 的核心产品有哪些？",
-                f"{canonical} 在 {domains[0] if domains else '行业'} 有哪些落地案例？",
-                f"{products[0] if products else canonical} 适合解决什么问题？",
-            ]
+    if qs and not _questions_match_lang(qs, lang_bucket):
+        actual_lang = detect_lang(" ".join(qs))
+        logger.warning(
+            "Suggestions language mismatch: entity=%s expected=%s actual=%s cache_key=%s",
+            canonical,
+            lang_bucket,
+            actual_lang,
+            cache_key,
+        )
+        rewritten = _rewrite_questions(qs, lang_bucket)
+        qs = rewritten if rewritten else []
+
+    if not qs or not _questions_match_lang(qs, lang_bucket):
+        qs = _fallback_questions(canonical, lang_bucket, products=products, domains=domains)
 
     # 去重
     seen = set()

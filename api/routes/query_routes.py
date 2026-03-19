@@ -6,6 +6,7 @@ from fastapi.responses import StreamingResponse
 from api.schemas import QueryRequest, QueryResponse
 from api.controllers.query_controller import query_knowledge
 from api.errors import ErrorCode, error_payload
+from core.lang_detect import resolve_query_language
 
 router = APIRouter(tags=["Retrieval"])
 
@@ -14,8 +15,8 @@ router = APIRouter(tags=["Retrieval"])
 def query_route(request: QueryRequest, http_request: Request) -> QueryResponse:
     """HTTP 层：只负责解析请求与错误转成 HTTPException。"""
     try:
-        lang = (http_request.headers.get("x-lang") or "zh").strip().lower()
-        data = query_knowledge(request, lang=lang)
+        ui_lang = (http_request.headers.get("x-lang") or "zh").strip().lower()
+        data = query_knowledge(request, ui_lang=ui_lang)
         return QueryResponse(**data)
     except HTTPException:
         raise
@@ -52,7 +53,9 @@ def _stream_ndjson(query: str, mode: str, lang: str = "zh"):
 @router.post("/query/stream")
 def query_stream_route(request: QueryRequest, http_request: Request) -> StreamingResponse:
     """流式查询：返回 NDJSON 流，每行一个 JSON。事件 type: chunk | done | error。"""
-    lang = (http_request.headers.get("x-lang") or "zh").strip().lower()
+    ui_lang = (http_request.headers.get("x-lang") or "zh").strip().lower()
+    lang_info = resolve_query_language(request.query.strip(), ui_lang)
+    final_lang = str(lang_info["lang_final"])
 
     def _stream_ndjson_enriched(query: str, mode: str, lang: str):
         import nest_asyncio
@@ -69,10 +72,13 @@ def query_stream_route(request: QueryRequest, http_request: Request) -> Streamin
                 if isinstance(event, dict):
                     if event.get("type") == "chunk" and isinstance(event.get("text"), str):
                         final_answer_parts.append(event.get("text") or "")
+                        line = json.dumps(event, ensure_ascii=False) + "\n"
+                        yield line.encode("utf-8")
                     elif event.get("type") == "done":
                         last_done_event = event
-                line = json.dumps(event, ensure_ascii=False) + "\n"
-                yield line.encode("utf-8")
+                    else:
+                        line = json.dumps(event, ensure_ascii=False) + "\n"
+                        yield line.encode("utf-8")
 
             if last_done_event is None:
                 final_answer = "".join(final_answer_parts).strip()
@@ -97,6 +103,10 @@ def query_stream_route(request: QueryRequest, http_request: Request) -> Streamin
                 "relations": relations,
                 "count": int(graph.get("count")) if isinstance(graph.get("count"), int) else len(relations),
             }
+            if isinstance(graph.get("summary"), str):
+                graph_payload["summary"] = graph.get("summary")
+            if isinstance(graph.get("two_hop"), list):
+                graph_payload["two_hop"] = graph.get("two_hop")
 
             debug_payload = last_done_event.get("debug") if isinstance(last_done_event.get("debug"), dict) else {}
 
@@ -106,6 +116,7 @@ def query_stream_route(request: QueryRequest, http_request: Request) -> Streamin
                 "sources": sources,
                 "graph": graph_payload,
                 "debug": debug_payload,
+                **lang_info,
             }
             for k in ("pipeline_latency_ms", "first_token_ms", "total_ms"):
                 if k in last_done_event:
@@ -128,8 +139,7 @@ def query_stream_route(request: QueryRequest, http_request: Request) -> Streamin
             ).encode("utf-8") + b"\n"
 
     return StreamingResponse(
-        _stream_ndjson_enriched(request.query.strip(), request.mode, lang),
+        _stream_ndjson_enriched(request.query.strip(), request.mode, final_lang),
         media_type="application/x-ndjson",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
-

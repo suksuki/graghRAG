@@ -6,9 +6,6 @@ import httpx
 from configs.config import settings, get_env_path
 from api.schemas import TestRequest
 import api.deps as deps
-from core.graph_engine import GraphEngine
-from core.vector_store import VectorEngine
-from core.ingestion import SMEIngestor
 
 logger = logging.getLogger(__name__)
 
@@ -143,9 +140,7 @@ async def update_settings_controller(update: Dict[str, str]) -> Dict[str, Any]:
             f.writelines(lines_out)
 
         # 4. 重新初始化引擎（使用已更新的 settings 配置）
-        deps.graph_engine = GraphEngine()
-        deps.vector_engine = VectorEngine()
-        deps.ingestor = SMEIngestor()
+        deps.reset_engines()
 
         logger.info(
             "Settings updated: LLM=%s, Embedding=%s(%sd), URL=%s",
@@ -162,4 +157,3 @@ async def update_settings_controller(update: Dict[str, str]) -> Dict[str, Any]:
     except Exception as e:  # noqa: BLE001
         logger.error(f"Failed to update settings: {e}")
         return {"status": "error", "message": str(e)}
-

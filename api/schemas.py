@@ -20,6 +20,10 @@ class QueryResponse(BaseModel):
     # GraphRAG 可视化字段（可选）
     graph: Optional[Dict[str, Any]] = None
     debug: Optional[Dict[str, Any]] = None
+    lang_ui: Optional[str] = None
+    lang_detected: Optional[str] = None
+    lang_final: Optional[str] = None
+    suggest_switch: Optional[bool] = None
 
 
 class TestRequest(BaseModel):
