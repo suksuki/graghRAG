@@ -11,7 +11,8 @@ from api.controllers.knowledge_hub_controller import (
     search_chunks_controller,
 )
 
-router = APIRouter(tags=["knowledge"])
+# 使用 /knowledge 前缀，避免与 FastAPI 默认 Swagger UI 路径 GET /docs 冲突。
+router = APIRouter(prefix="/knowledge", tags=["knowledge"])
 
 
 @router.get("/docs")

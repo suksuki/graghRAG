@@ -4,6 +4,37 @@
 
 ---
 
+## 2026-03（文档智能产品层：知识库路径 + Hybrid + Grounded Insight）
+
+### 目标
+
+在 **DI-first** 边界下补齐可对外演示的产品 API：**知识库（文档中心）**、**融合检索**、**单请求证据约束洞察**；并消除与 FastAPI 默认 Swagger（`GET /docs`）的路径冲突。
+
+### 1. API 与 MVC
+
+- **知识库**：`api/routes/knowledge_hub_routes.py`，统一前缀 **`/knowledge`**：
+  - `GET /knowledge/docs`、`GET /knowledge/docs/{doc_id}`、`GET /knowledge/search`、`GET /knowledge/entity/{name}`。
+  - 前端经 Vite 代理使用 **`/api/knowledge/...`**（`apps/src/hooks/*.js`）。
+- **融合检索**：`POST /api/v1/hybrid-search`（`core/hybrid_search_service.py` + `hybrid_search_controller`）；Vector-first、图扩展为辅助。
+- **单文档洞察**：`POST /api/v1/insights/document`（`core/document_insight_service.py` + `document_insight_controller`）；摘要仅基于 `supporting_chunks`，**无片段不调 LLM**；`ref_index` 与 `[n]` 引用对齐；`key_relations` 可带 **`kg_source` / `kg_confidence`**。
+- **语料洞察**：`POST /insights/corpus`（`corpus_insight_controller`），聚合多文档 `di_*`。
+
+### 2. 摄取与图治理（文档对齐）
+
+- **`GRAPH_MAX_NODES`**、图批超时等与 `core/ingestion.py` 一致描述已写入 `docs/INGESTION_PIPELINE.md`（替换过时的「强上限 5 / 5s」表述）。
+- 关系边 **`kg_*`** 与 `core/kg_edge_filter.py`、查询阈值见摄取小结 **§5.3**。
+
+### 3. 文档
+
+- 更新：`docs/ARCHITECTURE.md`（检索分层、控制器枚举、`/knowledge` 约定）、`docs/API_REFERENCE.md`（新增 §10 知识库；Hybrid/Insight 顺延节号）、`docs/TESTING.md`、`docs/DOCUMENT_INTELLIGENCE_POSITIONING.md`、`docs/PRODUCT_ROADMAP_P0.md`。
+
+### 4. 测试
+
+- `tests/test_api.py`：补充 **`/knowledge/docs`**、**`/knowledge/search`**；加强 **`/api/v1/insights/document`** 对 **`ref_index`** 的断言。
+- 全量：`pytest` — **43 passed**（见 `docs/TESTING.md` §4.6）。
+
+---
+
 ## 2026-03（Graph Runtime 定型 + 测试补齐）
 
 ### 目标

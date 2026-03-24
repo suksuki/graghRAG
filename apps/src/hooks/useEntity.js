@@ -10,7 +10,7 @@ function suggestionsCacheKey(entityName, lang) {
 }
 
 /**
- * GET /api/entity/{name} — 首屏加载。
+ * GET /api/knowledge/entity/{name} — 首屏加载。
  * GET /api/graph/suggestions?entity= — 仅通过 triggerSuggestions() 按需加载；命中缓存则同步回填、无请求。
  */
 export function useEntity(entityName) {
@@ -46,7 +46,7 @@ export function useEntity(entityName) {
 
         (async () => {
             try {
-                const r = await axios.get(`/api/entity/${encodeURIComponent(entityName)}`, {
+                const r = await axios.get(`/api/knowledge/entity/${encodeURIComponent(entityName)}`, {
                     headers: { 'x-lang': i18n.language || 'zh' },
                 });
                 if (!cancelled) setProfile(r.data);

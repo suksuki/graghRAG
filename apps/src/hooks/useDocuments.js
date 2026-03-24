@@ -3,7 +3,7 @@ import axios from 'axios';
 import { useTranslation } from 'react-i18next';
 
 /**
- * GET /api/docs → { documents: [{ id, name, summary, entities, tags }, ...] }
+ * GET /api/knowledge/docs → { documents: [{ id, name, summary, entities, tags }, ...] }
  */
 export function useDocuments() {
     const { i18n } = useTranslation();
@@ -15,7 +15,7 @@ export function useDocuments() {
         setLoading(true);
         setError(null);
         try {
-            const res = await axios.get('/api/docs', {
+            const res = await axios.get('/api/knowledge/docs', {
                 headers: { 'x-lang': i18n.language || 'zh' },
             });
             setDocuments(Array.isArray(res.data?.documents) ? res.data.documents : []);

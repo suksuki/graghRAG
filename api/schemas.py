@@ -37,7 +37,7 @@ class TestRequest(BaseModel):
 
 
 class ProductDocItem(BaseModel):
-    """文档中心列表项（GET /docs）。"""
+    """文档中心列表项（GET /knowledge/docs）。"""
 
     id: str
     name: str
@@ -57,6 +57,14 @@ class DocRelationItem(BaseModel):
     source: str
     relation: str
     target: str
+    kg_source: Optional[str] = Field(
+        None,
+        description="图边来源：llm / fallback / legacy；仅作辅助上下文，非摘要主证据。",
+    )
+    kg_confidence: Optional[float] = Field(
+        None,
+        description="边置信度；辅助展示与降权，不可替代 supporting_chunks。",
+    )
 
 
 class ProductDocDetailResponse(BaseModel):
@@ -104,26 +112,111 @@ class CorpusInsightRequest(BaseModel):
 
 
 class HybridSearchRequest(BaseModel):
-    """POST /api/v1/hybrid-search — Vector-first, graph-augmented（向量主路径，图扩展增强）。"""
+    """
+    POST /api/v1/hybrid-search — **Vector-first, graph-augmented**.
 
-    query: str = Field(..., min_length=1, description="用户问题或关键词")
-    top_k: int = Field(5, ge=1, le=30, description="向量召回条数")
-    graph_expand_k: int = Field(20, ge=1, le=100, description="图扩展关系条数上限")
+    Vector search is the **primary evidence** source; the graph **augments** context from seeds
+    derived from chunks and metadata. Graph results are supporting signal, not a replacement for chunks.
+    """
+
+    query: str = Field(
+        ...,
+        min_length=1,
+        description=(
+            "User question or keywords. "
+            "Hybrid retrieval: vector similarity is primary; graph expansion follows seed entities."
+        ),
+    )
+    top_k: int = Field(
+        5,
+        ge=1,
+        le=30,
+        description="Number of vector chunks to retrieve (primary evidence).",
+    )
+    graph_expand_k: int = Field(
+        20,
+        ge=1,
+        le=100,
+        description="Max graph relationships to fetch after seeding from vector/metadata (augmentation).",
+    )
     min_kg_conf: Optional[float] = Field(
         None,
         ge=0.0,
         le=1.0,
-        description="关系最小 kg_confidence；默认取配置 KG_MIN_EDGE_CONFIDENCE_FOR_QUERY",
+        description=(
+            "Minimum relationship kg_confidence for graph expansion; "
+            "defaults to KG_MIN_EDGE_CONFIDENCE_FOR_QUERY when omitted."
+        ),
     )
     include_fallback: bool = Field(
         False,
-        description="为 true 时图扩展包含低置信度 / fallback 边（min 视为 0）",
+        description=(
+            "If true, include low-confidence / lexical-fallback edges in graph expansion (debug or weak-data mode)."
+        ),
     )
 
 
 class HybridSearchResponse(BaseModel):
-    query: str
-    results: List[Dict[str, Any]]
+    """
+    Hybrid retrieval response: **chunks carry primary evidence**; **relations are supporting context**.
+
+    Do not treat graph-only rows as sufficient answers without vector-backed text.
+    """
+
+    query: str = Field(..., description="Echo of the submitted query.")
+    results: List[Dict[str, Any]] = Field(
+        ...,
+        description=(
+            "Ranked hits: items with type `chunk` (vector, primary) or `relation` (graph, augmentation). "
+            "Graph triplets should be shown as supporting context alongside chunk text."
+        ),
+    )
+    debug: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Telemetry: e.g. vector_hits, graph_nodes, graph_edges, seed_entities.",
+    )
+
+
+class DocumentInsightRequest(BaseModel):
+    """
+    POST /api/v1/insights/document — **DI-first**：摘要必须锚定在 `supporting_chunks`；
+    `key_relations` 仅为辅助信号，不能替代片段证据。
+    """
+
+    query: str = Field(
+        ...,
+        min_length=1,
+        description="问题或关注焦点；用于向量检索与 grounded 摘要。",
+    )
+    top_k: int = Field(5, ge=1, le=20, description="参与摘要的向量片段条数上限")
+    doc_id: Optional[str] = Field(
+        None,
+        description="可选，限制为指定 file_name 的 chunk（与 metadata file_name 一致）",
+    )
+    include_graph_relations: bool = Field(
+        True,
+        description="是否附带图中与关键实体相关的关系（经 kg_confidence 过滤）",
+    )
+
+
+class DocumentInsightResponse(BaseModel):
+    summary: str = Field(
+        ...,
+        description="仅基于 supporting_chunks 的 grounded 摘要；证据不足时会明确说明。",
+    )
+    key_entities: List[str] = Field(default_factory=list)
+    key_relations: List[DocRelationItem] = Field(
+        default_factory=list,
+        description="图关系为辅助上下文，非摘要主证据。",
+    )
+    supporting_chunks: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="向量检索片段；含 ref_index 与摘要中 [1]、[2] 引用一一对应。",
+    )
+    insufficient_evidence: bool = Field(
+        False,
+        description="为 true 表示未检索到片段或无法据此作答",
+    )
     debug: Dict[str, Any] = Field(default_factory=dict)
 
 

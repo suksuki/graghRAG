@@ -3,7 +3,7 @@ import axios from 'axios';
 import { useTranslation } from 'react-i18next';
 
 /**
- * 调用 GET /api/search?q=（仅使用 API 返回的 query + results，不注入 mock）。
+ * 调用 GET /api/knowledge/search?q=（仅使用 API 返回的 query + results，不注入 mock）。
  */
 export function useSearch() {
     const { i18n } = useTranslation();
@@ -23,7 +23,7 @@ export function useSearch() {
             setLoading(true);
             setError(null);
             try {
-                const res = await axios.get('/api/search', {
+                const res = await axios.get('/api/knowledge/search', {
                     params: { q },
                     headers: { 'x-lang': i18n.language || 'zh' },
                 });

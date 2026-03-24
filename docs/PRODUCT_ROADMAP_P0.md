@@ -19,8 +19,8 @@
 
 #### 后端
 
-- [x] 新增 API: `GET /api/docs`
-- [x] 新增 API: `GET /api/docs/{id}`
+- [x] 新增 API: `GET /knowledge/docs`（前端代理：`GET /api/knowledge/docs`；**避免占用 `GET /docs` 与 Swagger 冲突**）
+- [x] 新增 API: `GET /knowledge/docs/{id}`
 
 #### 数据
 
@@ -60,7 +60,7 @@
 
 #### 后端
 
-- [x] 新增 API: `GET /api/search?q=`
+- [x] 新增 API: `GET /knowledge/search?q=`（前端：`GET /api/knowledge/search`）
 - [x] 实现：使用 `VectorEngine` retriever，返回 top chunks
 
 #### 返回结构（示例）
@@ -88,7 +88,7 @@
 
 #### 后端
 
-- [x] 新增 API: `GET /api/entity/{name}`
+- [x] 新增 API: `GET /knowledge/entity/{name}`（前端：`GET /api/knowledge/entity/...`）
 
 #### 返回结构（示例）
 
@@ -133,11 +133,23 @@
 
 ---
 
+### 7. 融合检索与单请求洞察（DI 表达层）
+
+#### 后端
+
+- [x] `POST /api/v1/hybrid-search`（Vector-first，图扩展辅助）
+- [x] `POST /api/v1/insights/document`（`supporting_chunks` 锚定摘要，`ref_index` 与 `[n]` 对齐）
+- [x] `POST /insights/corpus`（跨文档 `di_*` 聚合）
+
+详见 `docs/API_REFERENCE.md` §10–§12、`docs/DOCUMENT_INTELLIGENCE_POSITIONING.md`。
+
+---
+
 ## 技术约束（必须遵守）
 
 1. **不改核心** `QueryPipeline`：Graph-first、precompute、language guard 保持。
 2. **统一 API 结构**：新增接口走 `api/schemas.py` + `api/controllers/` + `api/routes/`（见项目 MVC 约定）。
-3. **单一数据源**：Graph（Neo4j）为结构核心；Vector 仅用于检索与片段。
+3. **证据分层**：问答与洞察以 **向量 chunk / 文档正文** 为主证据；Graph（Neo4j）为结构与辅助信号（与 `DOCUMENT_INTELLIGENCE_POSITIONING.md` 一致）。
 
 ---
 

@@ -126,6 +126,50 @@ def _relevance_tokens(query: str) -> Set[str]:
     return {t for t in s if len(t) >= 2}
 
 
+def _vector_evidence_anchors(nodes_with_scores: List[Any]) -> Tuple[Set[str], str]:
+    """
+    从本轮向量召回的 chunk 收集：metadata 实体名 + 正文拼接串。
+    用于判断图边是否「贴着文档证据」。
+    """
+    meta_names: Set[str] = set()
+    texts: List[str] = []
+    for nws in nodes_with_scores or []:
+        node = getattr(nws, "node", None)
+        if node is None:
+            continue
+        md = getattr(node, "metadata", None) or {}
+        for key in (DI_ENTITIES, "di_entities", "entities"):
+            if key in md:
+                for x in _parse_di_entities(md.get(key)):
+                    n = str(x).strip()
+                    if len(n) >= 2:
+                        meta_names.add(n)
+                        meta_names.add(n.lower())
+        t = (getattr(node, "text", "") or "").strip()
+        if t:
+            texts.append(t.lower())
+    return meta_names, "\n".join(texts)
+
+
+def _relation_anchored_to_vector_chunks(
+    src: str, tgt: str, meta_names: Set[str], text_blob_lower: str
+) -> bool:
+    """主/宾是否与任一向量 chunk 的 metadata 实体或正文子串对齐。"""
+    for raw in (src, tgt):
+        name = (raw or "").strip()
+        if len(name) < 2:
+            continue
+        nl = name.lower()
+        if name in meta_names or nl in meta_names:
+            return True
+        if name in text_blob_lower or nl in text_blob_lower:
+            return True
+    return False
+
+
+VECTOR_UNANCHORED_REL_PENALTY = 0.85
+
+
 def _relation_relevance_bonus(
     src: str, rel_type: str, tgt: str, tokens: Set[str]
 ) -> float:
@@ -234,6 +278,7 @@ def run_hybrid_search(
         graph_driver, seeds, graph_expand_limit, eff_min
     )
     query_tokens = _relevance_tokens(q)
+    anchor_meta, anchor_blob = _vector_evidence_anchors(nodes_with_scores)
 
     results: List[Dict[str, Any]] = []
     seen_chunk: Set[str] = set()
@@ -276,6 +321,11 @@ def run_hybrid_search(
             key[0], key[1], key[2], query_tokens
         )
         sc = min(1.0, base_sc + rel_b)
+        anchored = _relation_anchored_to_vector_chunks(
+            key[0], key[2], anchor_meta, anchor_blob
+        )
+        if not anchored:
+            sc *= VECTOR_UNANCHORED_REL_PENALTY
         norm = normalize_kg_rel_properties_for_api(row["rel_props"])
         results.append(
             {
@@ -288,6 +338,7 @@ def run_hybrid_search(
                 "kg_confidence": norm.get("kg_confidence"),
                 "score_base": round(base_sc, 4),
                 "score_relevance": round(rel_b, 4),
+                "vector_anchored": anchored,
             }
         )
 

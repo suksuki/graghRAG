@@ -10,6 +10,7 @@ GraphRAG Platform 是一个面向中小企业的 **图谱 + 向量 + LLM** 知�
 - 基于 pgvector 的语义检索。
 - 基于 Neo4j 的知识图谱构建与关系查询。
 - 通过 **QueryPipeline（GraphRAG v2）** 对查询进行意图识别、策略选择、重排与上下文压缩。
+- **知识库 HTTP API**：`GET /knowledge/docs`、`/knowledge/search` 等（与 Swagger `GET /docs` 分离）；**融合检索** `POST /api/v1/hybrid-search`；**单请求洞察** `POST /api/v1/insights/document`（证据锚定摘要）。
 - 通过 Celery + Redis 异步执行摄取任务，避免阻塞 API。
 
 更多架构细节见 `docs/ARCHITECTURE.md`。

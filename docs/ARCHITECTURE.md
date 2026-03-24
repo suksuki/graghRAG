@@ -1,13 +1,15 @@
 ## GraphRAG 平台架构总览
 
-GraphRAG 平台围绕「**文档 → 知识图谱 + 向量库 → LLM 问答**」这一主线构建，整体可以分为以下层次：
+GraphRAG 平台围绕「**文档 → 知识图谱 + 向量库 → 检索 / 问答 / 洞察**」这一主线构建，整体可以分为以下层次：
 
 > **产品边界**：以文档智能为主、图为增强层，避免 Graph-first 倒置；见 [`DOCUMENT_INTELLIGENCE_POSITIONING.md`](./DOCUMENT_INTELLIGENCE_POSITIONING.md)。
 
 - **API 层（FastAPI）**：`api/main.py` + `api/routes/*`
 - **控制器层（Controllers）**：`api/controllers/*`
 - **查询编排层（QueryPipeline）**：`pipelines/query_pipeline.py`（含流式 `run_stream()`，首字与延迟指标回传）
-- **摄取管道（Ingestion Pipeline）**：`core/ingestion.py`
+- **融合检索（独立服务）**：`core/hybrid_search_service.py` — Vector-first、图扩展为辅助信号（`POST /api/v1/hybrid-search`）
+- **单请求洞察（表达层）**：`core/document_insight_service.py` — 摘要严格锚定 `supporting_chunks`，可选 `key_relations`（`POST /api/v1/insights/document`）
+- **摄取管道（Ingestion Pipeline）**：`core/ingestion.py`；**文档元数据（DI）**：`core/document_intelligence.py`（`di_*` 写入 chunk metadata）
 - **图引擎（GraphEngine / Neo4j）**：`core/graph_engine.py`
 - **向量引擎（VectorEngine / pgvector）**：`core/vector_store.py`
 - **LLM 能力（Ollama）**：LLM + Embedding + 抽取模型
@@ -31,8 +33,12 @@ GraphRAG 平台围绕「**文档 → 知识图谱 + 向量库 → LLM 问答**�
                      │  - /documents      │
                      │  - /graph/data     │
                      │  - /ingestion/...  │
-                     │  - /query          │
-                     │  - /settings/...   │
+                     │  - /query, /query/stream │
+                     │  - /knowledge/* (文档中心) │
+                     │  - /api/v1/hybrid-search   │
+                     │  - /api/v1/insights/document │
+                     │  - /insights/corpus    │
+                     │  - /settings/...       │
                      └────────┬────────────┘
                               │ 调用 Controllers
                               ▼
@@ -105,10 +111,12 @@ GraphRAG 平台围绕「**文档 → 知识图谱 + 向量库 → LLM 问答**�
 - 入口：`api/main.py`
 - 职责：
   - 初始化 `FastAPI` 应用与 CORS 中间件。
-  - 挂载路由模块：`api.routes.query_routes`、`api.routes.ingestion_routes`、`api.routes.settings_routes`。
+  - 挂载路由模块（节选）：`query_routes`、`ingestion_routes`、`settings_routes`、`graph_routes`、`knowledge_hub_routes`、`insight_routes`（corpus）、`hybrid_search_routes`、`document_insight_routes`。
   - 通过 `api.deps` 暴露长生命周期的 `graph_engine`、`vector_engine`、`ingestor` 供测试与控制器使用。
 
 API 层本身**不包含业务逻辑**，只负责路由注册与基础健康检查（`GET /`）。
+
+**知识库路径约定**：文档中心、向量搜索、实体档案统一在 **`/knowledge/*`** 下（例如 `GET /knowledge/docs`），**不得**再占用根路径 `GET /docs`，以免与 FastAPI 默认 Swagger UI（`/docs`）冲突。前端经 Vite 代理使用 `/api/knowledge/...`。
 
 ---
 
@@ -137,7 +145,32 @@ API 层本身**不包含业务逻辑**，只负责路由注册与基础健康检
     - 调用 Ollama / Neo4j 做连通性测试。
     - 更新 `.env` 并重新构建 `GraphEngine` / `VectorEngine` / `SMEIngestor`。
 
+- `knowledge_hub_controller.py`
+  - 文档列表 / 单文档详情 / 向量搜索 / 实体档案；聚合 `DATA_RAW_DIR`、`di_*` metadata、Neo4j 与 pgvector。
+
+- `hybrid_search_controller.py`
+  - 调用 `core/hybrid_search_service.py`：向量主召回 + 种子实体图扩展；返回 `chunk` + `relation` 混合结果与 `debug`。
+
+- `document_insight_controller.py`
+  - 调用 `core/document_insight_service.py`：grounded 摘要（无 chunk 不调 LLM）、`supporting_chunks.ref_index` 与摘要 `[n]` 对齐、可选 `key_relations`（含 `kg_source` / `kg_confidence`）。
+
+- `corpus_insight_controller.py`
+  - 跨文档聚合 `di_*` 的语料级洞察（`POST /insights/corpus`）。
+
 > 控制器层遵循 MVC 中「C」的含义：**不关心 HTTP 细节，只处理业务决策与调度。**
+
+---
+
+## 检索分层与职责（Query vs Hybrid vs Insight）
+
+| 能力 | 入口 | 职责 |
+|------|------|------|
+| 对话式问答 | `POST /query`、`POST /query/stream` | `QueryPipeline`：意图、策略、向量/图检索、合成回答（产品主问答路径） |
+| 融合检索 | `POST /api/v1/hybrid-search` | 显式「向量 → 图扩展」检索结果列表，**不**在同请求内做长文本生成 |
+| 单请求洞察 | `POST /api/v1/insights/document` | **表达层**：仅以 `supporting_chunks` 为证据边界生成摘要；图为辅助 |
+| 知识库搜索 | `GET /knowledge/search` | 面向 UI 的 chunk 列表检索 |
+
+原则：**Document / chunk 为真源；Graph 为上下文与辅助信号**（与 `DOCUMENT_INTELLIGENCE_POSITIONING.md` 一致）。
 
 ---
 
@@ -201,6 +234,8 @@ API 层本身**不包含业务逻辑**，只负责路由注册与基础健康检
 ## GraphEngine（Neo4j）
 
 位置：`core/graph_engine.py`
+
+- 关系边可携带 **`kg_source`**、**`kg_confidence`**（摄取或回填）；查询与 Hybrid/Insight 侧通过 `core/kg_edge_filter.py` 与配置阈值过滤，避免低质量边主导展示。
 
 - 使用 `Neo4jPropertyGraphStore` 与 Neo4j 通信。
 - 使用两个 LLM：

@@ -3,7 +3,7 @@ import axios from 'axios';
 import { useTranslation } from 'react-i18next';
 
 /**
- * GET /api/docs/{doc_id} + GET /api/graph/suggestions?doc_id=
+ * GET /api/knowledge/docs/{doc_id} + GET /api/graph/suggestions?doc_id=
  * 仅使用 API 既有字段，不注入 mock。
  */
 export function useDocumentDetail(docId) {
@@ -28,7 +28,7 @@ export function useDocumentDetail(docId) {
 
         (async () => {
             try {
-                const r = await axios.get(`/api/docs/${encodeURIComponent(docId)}`, {
+                const r = await axios.get(`/api/knowledge/docs/${encodeURIComponent(docId)}`, {
                     headers: { 'x-lang': i18n.language || 'zh' },
                 });
                 if (!cancelled) setDetail(r.data);

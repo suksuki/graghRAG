@@ -491,7 +491,7 @@ def _file_meta_on_disk(name: str) -> Dict[str, Any]:
 
 
 def list_product_documents_controller() -> Dict[str, List[Dict[str, Any]]]:
-    """GET /docs — 聚合磁盘文件 + 向量摘要 + 图实体。"""
+    """GET /knowledge/docs — 聚合磁盘文件 + 向量摘要 + 图实体。"""
     base = settings.DATA_RAW_DIR
     if not os.path.isdir(base):
         return {"documents": []}
@@ -531,7 +531,7 @@ def list_product_documents_controller() -> Dict[str, List[Dict[str, Any]]]:
 
 
 def get_product_document_controller(doc_id: str, lang: str | None = None) -> Dict[str, Any] | None:
-    """GET /docs/{id} — doc_id 为磁盘上的文件名（URL 解码后）。"""
+    """GET /knowledge/docs/{id} — doc_id 为磁盘上的文件名（URL 解码后）。"""
     name = (doc_id or "").strip()
     if not name or "/" in name or "\\" in name or name.startswith("."):
         return None
@@ -602,7 +602,7 @@ def get_product_document_controller(doc_id: str, lang: str | None = None) -> Dic
 
 
 def search_chunks_controller(query: str, top_k: int = 10) -> Dict[str, Any]:
-    """GET /search — 向量检索 top chunks。"""
+    """GET /knowledge/search — 向量检索 top chunks。"""
     q = (query or "").strip()
     if not q:
         return {"query": "", "results": []}
@@ -754,7 +754,7 @@ def _documents_mentioning_entity(canonical: str, limit: int = 40) -> List[str]:
 
 
 def get_entity_profile_controller(name: str, lang: str | None = None) -> Dict[str, Any] | None:
-    """GET /entity/{name} — 实体档案（图聚合）。"""
+    """GET /knowledge/entity/{name} — 实体档案（图聚合）。"""
     raw = (name or "").strip()
     if not raw:
         return None

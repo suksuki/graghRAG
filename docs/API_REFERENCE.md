@@ -310,9 +310,24 @@ curl -X POST http://localhost:8000/upload \
 
 ---
 
-## 10. 融合检索 `POST /api/v1/hybrid-search`
+## 10. 知识库（文档中心）`GET /knowledge/*`
 
-- **Purpose**：在**不替代**现有 `GET /search` 的前提下，提供 **Vector-first、Graph-augmented** 的混合检索：先向量召回 chunk，再从 `di_entities` / 元数据 / 问句词块得到种子实体，在 Neo4j 上做一阶扩展。
+> **路径说明**：知识库相关接口统一挂在 **`/knowledge`** 下，**避免与 FastAPI 默认 Swagger UI（`GET /docs`）冲突**。前端经 Vite 代理调用时为 `GET /api/knowledge/...`。
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/knowledge/docs` | 文档列表：`documents[]`（`di_*` 摘要、实体、标签等） |
+| GET | `/knowledge/docs/{doc_id}` | 单文档详情；`doc_id` 为 URL 编码后的文件名 |
+| GET | `/knowledge/search` | 向量检索：`?q=&top_k=`；`q` 为空时返回空 `results` |
+| GET | `/knowledge/entity/{name}` | 实体档案（图聚合 + 弱档案降级） |
+
+- 可选请求头 **`x-lang`**：`zh` / `en` / `ko` 等，影响部分生成与改写逻辑。
+
+---
+
+## 11. 融合检索 `POST /api/v1/hybrid-search`
+
+- **Purpose**：在**不替代**现有 `GET /knowledge/search` 的前提下，提供 **Vector-first、Graph-augmented** 的混合检索：先向量召回 chunk，再从 `di_entities` / 元数据 / 问句词块得到种子实体，在 Neo4j 上做一阶扩展。
 - **Design principle**：**Vector-first, graph-augmented** —— 图是增强信号，不是主检索入口；与 `docs/DOCUMENT_INTELLIGENCE_POSITIONING.md` 一致。
 
 ### 请求体（JSON）
@@ -328,7 +343,7 @@ curl -X POST http://localhost:8000/upload \
 ### 响应要点
 
 - `results[]`：`type` 为 `chunk`（向量）或 `relation`（图三元组）。**不单独返回 `entity` 行**，实体信息体现在 `relation.triplet` 与 `debug.seed_entities`。
-- 关系项 `score` = `min(1, score_base + score_relevance)`：`score_base` 来自 `kg_confidence` 与 fallback 降权；`score_relevance` 为问句词元与主/宾/关系类型匹配的小额加分（上限约 0.35）。
+- 关系项 `score`：先 `min(1, score_base + score_relevance)`（`score_base` 来自 `kg_confidence` 与 fallback 降权；`score_relevance` 为问句词元与主/宾/关系类型匹配的小额加分，上限约 0.35）；若主/宾与**本轮 top_k 向量 chunk** 的 metadata 实体或正文无对齐，再乘以 **0.85**（保证图边尽量「贴着文档证据」）。`vector_anchored` 标明是否通过该锚点检查。
 - `debug`：`vector_hits`、`graph_nodes`、`graph_edges`、`seed_entities`。
 
 ### 示例（curl）
@@ -341,6 +356,40 @@ curl -s -X POST http://localhost:8000/api/v1/hybrid-search \
 
 ---
 
+## 12. 单请求文档洞察 `POST /api/v1/insights/document`
+
+- **Purpose**：在 **DI-first** 前提下，用向量召回的 **supporting_chunks** 作为**唯一摘要证据边界**，可选附带图中与关键实体相关的关系（辅助信号，非摘要主证据）。
+- **与** `POST /insights/corpus` **区别**：corpus 聚合多文档 `di_*`；本接口针对**单次查询**，以 chunk 正文为 grounding，适合「就着材料回答」类产品形态。
+
+### 请求体（JSON）
+
+| 字段 | 类型 | 默认 | 说明 |
+|------|------|------|------|
+| `query` | string | 必填 | 问题或关注焦点 |
+| `top_k` | int | 5 | 使用的向量片段条数（1–20） |
+| `doc_id` | string | 可选 | 若提供，仅保留 `metadata.file_name` 等于该值的 chunk |
+| `include_graph_relations` | bool | true | 是否查询 Neo4j 中与 `key_entities` 相关的关系（`kg_confidence` 过滤） |
+
+### 响应
+
+- `summary`：LLM 在**严格仅用 SOURCES** 的提示下生成；无片段时返回固定说明，不杜撰。有片段时提示模型在陈述后附加 **`[1]`、`[2]`** 等引用号，与下方 `ref_index` 对齐，便于前端高亮。
+- `supporting_chunks`：`id`、`**ref_index**`（与摘要引用号一致）、`file_name`、`snippet`、`score`。
+- `key_entities`：来自召回 chunk 的 metadata 实体。
+- `key_relations`：`source` / `relation` / `target`，以及 **`kg_source`**、**`kg_confidence`**（与摄取侧一致，标明辅助信号质量）；**不得**当作可脱离片段独立采信的主证据。
+- `insufficient_evidence`：未检索到可用片段时为 `true`。
+- `debug`：含 `chunk_count`、`lang_final` 等。
+
+### 示例（curl）
+
+```bash
+curl -s -X POST http://localhost:8000/api/v1/insights/document \
+  -H "Content-Type: application/json" \
+  -H "x-lang: zh" \
+  -d '{"query":"本文档主要结论是什么","top_k":5}'
+```
+
+---
+
 ## 小结
 
 以上接口构成了 GraphRAG 平台的主要 API 面，分别覆盖：
@@ -348,7 +397,10 @@ curl -s -X POST http://localhost:8000/api/v1/hybrid-search \
 - 文档生命周期：上传 / 列表 / 删除。
 - 图谱与摄取进度：图数据、摄取状态、图谱概览（`/graph/overview`）、推荐问题（`/graph/suggested_questions`）。
 - 问答能力：基于 GraphRAG v2 的 `/query` 与流式 `/query/stream`。
+- **知识库 UI**：`GET /knowledge/docs`、`/knowledge/search`、`/knowledge/entity/...`（与 Swagger `/docs` 分离）。
+- **跨文档洞察**：`POST /insights/corpus`（聚合多文档 `di_*`）。
 - **融合检索**：`POST /api/v1/hybrid-search`（向量主路径 + 图扩展，独立灰度）。
+- **单请求洞察**：`POST /api/v1/insights/document`（片段锚定摘要 + 可选图关系辅助）。
 - 系统配置：读取 / 测试连接 / 更新模型配置。
 
 更多细节可参考：

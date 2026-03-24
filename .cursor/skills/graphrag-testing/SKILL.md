@@ -19,7 +19,8 @@ description: >
 - **API tests**
   - Use `TestClient` from `fastapi.testclient`.
   - Import `app` from `api.main`.
-  - Hit real HTTP endpoints (e.g. `/query`, `/upload`, `/settings`).
+  - Hit real HTTP endpoints (e.g. `/query`, `/upload`, `/settings`, `/knowledge/docs`, `/api/v1/hybrid-search`, `/api/v1/insights/document`).
+  - **Do not** assert on root `GET /docs` for product APIs — FastAPI serves OpenAPI Swagger there; knowledge hub lives under **`/knowledge/*`**.
 
 - **Integration tests**
   - May talk to real services:

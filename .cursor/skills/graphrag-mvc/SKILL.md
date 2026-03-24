@@ -18,6 +18,8 @@ description: >
 - **Controllers (C)**:
   - `api/controllers/` — request orchestration and business logic
   - Example: `corpus_insight_controller.py` — aggregates `di_*` metadata across docs for `POST /insights/corpus`
+  - Example: `knowledge_hub_controller.py` — document list/detail, chunk search, entity profile under **`/knowledge/*`** (not root `/docs`, avoids FastAPI Swagger conflict)
+  - Example: `hybrid_search_controller.py` / `document_insight_controller.py` — `POST /api/v1/hybrid-search`, `POST /api/v1/insights/document`
   - Example: `api/controllers/query_controller.py` implements the Graph+Vector hybrid query
 - **Views / Routes (V)**:
   - `api/routes/` — FastAPI `APIRouter` modules, HTTP-only concerns

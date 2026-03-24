@@ -13,7 +13,7 @@ import './DocumentDetail.css';
 
 /**
  * 实体页：左栏身份与说明，右栏关联文档 / 产品行业 / 推荐问题。
- * 数据：GET /api/entity/{name}；推荐问题仅在侧栏「推荐问题」进入视口时加载（IntersectionObserver + hook 内缓存）。
+ * 数据：GET /api/knowledge/entity/{name}；推荐问题仅在侧栏「推荐问题」进入视口时加载（IntersectionObserver + hook 内缓存）。
  */
 export default function EntityPage({
     entityName,

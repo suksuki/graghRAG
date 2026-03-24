@@ -10,7 +10,7 @@ export function fileStemTopic(filename) {
 }
 
 /**
- * @param {object|null} profile - GET /api/entity 响应
+ * @param {object|null} profile - GET /api/knowledge/entity 响应
  * @param {function} t - i18n t
  */
 export function buildEntityOverviewText(profile, t) {

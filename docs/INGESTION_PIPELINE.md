@@ -224,8 +224,8 @@ vector_indexed = _get_vector_indexed_files(self.vector_engine)
 2. 在图抽取前执行“高价值节点筛选”：
    - 文本前缀去重（降低重复块浪费）
    - 信息密度评分（产品/平台/系统、英文词、行业词、长度）
-   - 仅保留 top-k（当前默认 5）
-3. 按 `GRAPH_MAX_NODES`（可在 `.env` 中配置）裁剪最大处理节点数量，以控制单次图索引耗时（当前强上限 5）。
+   - 仅保留 top-k 高价值块（具体 k 与评分逻辑见 `core/ingestion.py`）
+3. 按 `GRAPH_MAX_NODES`（`configs/config.py`，默认 30；`0` 表示不限制）裁剪本轮回写入图索引的 chunk 数量，以控制单次摄取的 LLM 调用与耗时。
 4. 根据 `num_graph` 计算批大小 `batch_size`（当前为 1），分批调用：
 
 ```python
@@ -236,9 +236,14 @@ self.graph_engine.create_index(batch, num_workers=1, max_paths_per_chunk=2)
    - `graph_done` / `graph_total`
    - `progress` 百分比（55% ~ 95% 区间）。
 
-6. 单批处理设置硬超时（当前 5 秒）：
-   - 超时或异常时跳过该批，避免整个 ingestion 卡死。
+6. 单批处理设置**与抽取相关的硬超时**（`max(120, EXTRACTION_TIMEOUT + 90)` 秒量级，见 `core/ingestion.py`）：
+   - 超时或异常时跳过该批并记录告警，避免整次摄取卡死。
 7. 所有批次完成后，将总体进度置为 100%，并返回文档与节点数量。
+
+### 5.3 关系边上的来源与置信度（治理）
+
+- 抽取写入 Neo4j 的关系可携带 **`kg_source`**（如 `llm` / `lexical_fallback`）与 **`kg_confidence`**（0–1），便于查询与 API 层按阈值过滤（`core/kg_edge_filter.py`、`KG_MIN_EDGE_CONFIDENCE_FOR_QUERY` 等）。
+- **回填**：存量图可用 `scripts/backfill_kg_rel_provenance.py` 补写缺失的 `kg_*` 属性（可选运维步骤）。
 
 ---
 

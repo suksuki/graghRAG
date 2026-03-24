@@ -1,6 +1,6 @@
 """
 Document Intelligence — 将文档正文压缩为结构化元数据（摘要 / 关键词 / 主题 / 实体 / 要点 / 类型）。
-结果写入向量 chunk 的 metadata（di_* 前缀），供 GET /docs 聚合展示。
+结果写入向量 chunk 的 metadata（di_* 前缀），供 GET /knowledge/docs 等聚合展示。
 """
 
 from __future__ import annotations

@@ -8,34 +8,25 @@
 
 目录：`tests/`
 
-- **单元测试（unit tests）**
-  - 文件：`tests/test_utils.py`
-  - 重点：
-    - `api.utils` 中的安全函数（文件名清洗、路径解析、白名单等）。
-    - 不依赖外部服务，运行速度快。
+| 文件 | 类型 | 说明 |
+|------|------|------|
+| `test_utils.py` | 单元 | `sanitize_filename`、`resolve_path_under`、扩展名白名单等；无外部依赖 |
+| `test_document_loader.py` | 单元 | `core/document_loader`：按扩展名分发、HTML 剥离、`.doc` 转换与回退 |
+| `test_multilingual_graph_query.py` | 单元 | 多语言检测、precompute key、建议问题、query_controller 语言偏好等 |
+| `test_query_pipeline_contract.py` | 契约 | 流式 `done` 中 `graph` / `debug` 字段形状与 canonical entity 链路 |
+| `test_engines.py` | 集成（`integration`） | `GraphEngine` / `VectorEngine` / `SMEIngestor` 初始化与图查询引擎 |
+| `test_api.py` | API + 少量集成 | `TestClient` 走真实 HTTP；含 Ollama 直连与 `/settings/test` |
+| `test_integration.py` | 端到端 | `test_full_ingestion_and_query_flow`：上传 → 摄取 → `/query` |
 
-- **引擎初始化与集成（engine tests）**
-  - 文件：`tests/test_engines.py`
-  - 标记：`@pytest.mark.integration`
-  - 重点：
-    - `GraphEngine`、`VectorEngine`、`SMEIngestor` 的初始化。
-    - 基于真实 Neo4j / PostgreSQL / Ollama 的基础集成。
+### `test_api.py` 契约要点（产品化接口）
 
-- **API 测试（API tests）**
-  - 文件：`tests/test_api.py`
-  - 部分用例标记为 `integration`：
-    - `test_ollama_direct_connection`
-    - `test_api_settings_test_endpoint`
-  - 重点：
-    - FastAPI 路由层行为。
-    - 设置接口（`/settings` / `/settings/test` / `/settings/update`）。
-
-- **端到端回归测试（integration regression）**
-  - 文件：`tests/test_integration.py`
-  - 用例：`test_full_ingestion_and_query_flow`
-  - 重点：
-    - 覆盖完整流程：**上传 → 摄取 → 查询**。
-    - 验证在真实 Neo4j / PostgreSQL / Ollama 环境下，GraphRAG 查询结果正确。
+- `GET /`：健康检查。
+- `GET /settings`：配置字段存在。
+- `POST /api/v1/insights/document`：`summary`、`supporting_chunks`（有条目时含 **`ref_index`**）、`key_relations`、`insufficient_evidence`。
+- `POST /api/v1/hybrid-search`：`results`、`debug.vector_hits`、`debug.graph_edges`。
+- `GET /knowledge/docs`、`GET /knowledge/search`：知识库列表与搜索（**不得**使用根路径 `GET /docs`，与 Swagger 冲突）。
+- `POST /insights/corpus`：语料洞察响应字段完整。
+- 集成：`test_ollama_direct_connection`、`test_api_settings_test_endpoint`（需可用 Ollama）。
 
 ---
 
@@ -231,6 +222,15 @@ pytest -v tests/test_integration.py
   - `debug.entity_raw`
   - `debug.entity_canonical`
   - `debug.entity_used_for_graph`
+- **Insight**：`supporting_chunks[].ref_index` 与摘要中 `[n]` 引用一一对应（由 `document_insight_service` 与 schema 保证；API 测试在有条目时校验 `ref_index`）。
+- **知识库路径**：仅断言 `/knowledge/*`，避免与 OpenAPI UI 的 `/docs` 混淆。
+
+### 4.6 最近一次全量结果（仓库内）
+
+```bash
+PYTHONPATH=. python3 -m pytest -v -ra
+# 预期：43 passed（随用例增加而变化，以本地命令输出为准）
+```
 
 ---
 
