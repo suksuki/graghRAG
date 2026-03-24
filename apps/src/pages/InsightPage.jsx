@@ -72,7 +72,7 @@ export default function InsightPage() {
                         }
                     >
                         {groundedLoading ? <Loader2 className="spin" size={18} aria-hidden /> : null}
-                        {t('grounded_insight_generate')}
+                        {t('insight_page_grounded_btn')}
                     </button>
                 </div>
                 <p className="insight-page__grounded-hint">{t('insight_page_grounded_hint')}</p>
@@ -115,7 +115,10 @@ export default function InsightPage() {
                 ) : null}
             </section>
 
-            <div className="insight-page__divider" style={{ margin: '8px 0 24px', borderTop: '1px solid rgba(51,65,85,0.5)' }} />
+            <p className="insight-page__corpus-bridge" role="note">
+                {t('insight_page_corpus_bridge')}
+            </p>
+            <div className="insight-page__divider" />
 
             <CorpusInsightPanel variant="page" topKDocs={20} />
         </div>

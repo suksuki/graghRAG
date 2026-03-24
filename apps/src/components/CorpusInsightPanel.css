@@ -24,26 +24,6 @@
     margin-bottom: 14px;
 }
 
-.insight-panel__head--page {
-    justify-content: flex-end;
-}
-
-.insight-panel__head--page .insight-panel__actions {
-    margin-left: auto;
-}
-
-.insight-panel__sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
-}
-
 .insight-panel__title-row {
     display: flex;
     align-items: center;

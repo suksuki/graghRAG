@@ -28,7 +28,7 @@ export default function CorpusInsightPanel({ variant = 'embedded', topKDocs = 20
             className={`insight-panel ${isEmbedded ? 'insight-panel--embedded' : 'insight-panel--page'}`}
             aria-labelledby="corpus-insight-heading"
         >
-            <div className={`insight-panel__head ${isEmbedded ? '' : 'insight-panel__head--page'}`}>
+            <div className="insight-panel__head">
                 {isEmbedded ? (
                     <div>
                         <div className="insight-panel__title-row">
@@ -40,9 +40,15 @@ export default function CorpusInsightPanel({ variant = 'embedded', topKDocs = 20
                         <p className="insight-panel__subtitle">{t('insight_panel_subtitle')}</p>
                     </div>
                 ) : (
-                    <span id="corpus-insight-heading" className="insight-panel__sr-only">
-                        {t('insight_panel_title')}
-                    </span>
+                    <div>
+                        <div className="insight-panel__title-row">
+                            <BarChart3 size={22} style={{ color: '#818cf8', flexShrink: 0 }} aria-hidden />
+                            <h2 id="corpus-insight-heading" className="insight-panel__title">
+                                {t('insight_corpus_page_title')}
+                            </h2>
+                        </div>
+                        <p className="insight-panel__subtitle">{t('insight_corpus_page_subtitle')}</p>
+                    </div>
                 )}
                 <div className="insight-panel__actions">
                     <button

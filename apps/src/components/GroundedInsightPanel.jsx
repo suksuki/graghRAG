@@ -1,18 +1,49 @@
 import React, { useMemo, useState, useCallback, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Quote } from 'lucide-react';
+import { Quote, X } from 'lucide-react';
 import { parseSummaryRefs } from '../utils/parseSummaryRefs';
 import { parseStructuredGroundedSummary } from '../utils/parseStructuredGroundedSummary';
 import './GroundedInsightPanel.css';
 
+/** 同一句/同一条 bullet 内与其他引用共现：ref → 其余 ref_index 升序列表（长度≥2 才有条目） */
+function coCitationOthersByRef(parts) {
+    const unique = [
+        ...new Set(parts.filter((p) => p.type === 'ref').map((p) => p.ref)),
+    ].sort((a, b) => a - b);
+    if (unique.length < 2) return new Map();
+    const m = new Map();
+    unique.forEach((r) => m.set(r, unique.filter((x) => x !== r)));
+    return m;
+}
+
 /** 单段文本内 [n] 引用按钮（复用于整段摘要与结构化列表项） */
-function GroundedRefParts({ parts, keyPrefix, chunkByRef, activeRef, t, setTooltip, onRefClick }) {
+function GroundedRefParts({
+    parts,
+    keyPrefix,
+    partKeyPrefix,
+    chunkByRef,
+    rankByRef,
+    topStarSlotByKey,
+    activeRef,
+    t,
+    setTooltip,
+    onRefClick,
+    cancelTooltipDismiss,
+    scheduleTooltipDismissFromRef,
+}) {
+    const pk = partKeyPrefix ?? keyPrefix;
+    const coOthers = coCitationOthersByRef(parts);
     return parts.map((p, i) => {
         if (p.type === 'text') {
             return <span key={`${keyPrefix}-t-${i}`}>{p.value}</span>;
         }
         const ch = chunkByRef.get(p.ref);
         const missing = !ch;
+        const rank = rankByRef?.get?.(p.ref);
+        const slotKey = `${pk}-${i}`;
+        const showTopMark = rank === 1 && topStarSlotByKey?.get(slotKey) === true;
+        const topScoreStr =
+            showTopMark && typeof ch?.score === 'number' && !Number.isNaN(ch.score) ? ch.score.toFixed(3) : null;
         return (
             <button
                 key={`${keyPrefix}-r-${i}-${p.ref}`}
@@ -21,19 +52,34 @@ function GroundedRefParts({ parts, keyPrefix, chunkByRef, activeRef, t, setToolt
                     'grounded-insight__ref',
                     activeRef === p.ref ? 'grounded-insight__ref--active' : '',
                     missing ? 'grounded-insight__ref--missing' : '',
+                    showTopMark ? 'grounded-insight__ref--top' : '',
                 ]
                     .filter(Boolean)
                     .join(' ')}
-                aria-label={t('grounded_insight_ref_aria', { n: p.ref })}
+                aria-label={
+                    showTopMark
+                        ? t('grounded_insight_ref_aria_top_evidence', { n: p.ref })
+                        : t('grounded_insight_ref_aria', { n: p.ref })
+                }
+                title={
+                    showTopMark
+                        ? topScoreStr != null
+                            ? t('grounded_insight_ref_top_hover_title_scored', { score: topScoreStr })
+                            : t('grounded_insight_ref_top_hover_title')
+                        : undefined
+                }
                 aria-expanded={activeRef === p.ref}
                 onClick={() => onRefClick(p.ref)}
                 onMouseEnter={(e) => {
                     if (!ch) return;
+                    cancelTooltipDismiss?.();
+                    const siblings = coOthers.get(p.ref) || [];
                     setTooltip({
                         ref: p.ref,
                         x: e.clientX + 12,
                         y: e.clientY + 16,
                         chunk: ch,
+                        coCitationRefs: siblings.length > 0 ? siblings : undefined,
                     });
                 }}
                 onMouseMove={(e) => {
@@ -41,9 +87,15 @@ function GroundedRefParts({ parts, keyPrefix, chunkByRef, activeRef, t, setToolt
                         prev && prev.ref === p.ref ? { ...prev, x: e.clientX + 12, y: e.clientY + 16 } : prev
                     );
                 }}
-                onMouseLeave={() => setTooltip((prev) => (prev?.ref === p.ref ? null : prev))}
+                onMouseLeave={() => scheduleTooltipDismissFromRef?.(p.ref)}
             >
-                [{p.ref}]
+                [{p.ref}
+                {showTopMark ? (
+                    <span className="grounded-insight__ref-top-mark" aria-hidden>
+                        {t('grounded_insight_ref_top_mark')}
+                    </span>
+                ) : null}
+                ]
             </button>
         );
     });
@@ -78,8 +130,50 @@ export default function GroundedInsightPanel({
     const [summaryAnimClass, setSummaryAnimClass] = useState('');
     const prevSummaryRef = useRef(null);
     const [pulseRefIndex, setPulseRefIndex] = useState(null);
+    /** rank #1 引用点击时用更强 pulse + 略长动画 */
+    const [pulseIsTopEvidence, setPulseIsTopEvidence] = useState(false);
     const previewColRef = useRef(null);
     const sourcesColRef = useRef(null);
+    const tooltipLeaveTimerRef = useRef(null);
+
+    const cancelTooltipDismiss = useCallback(() => {
+        if (tooltipLeaveTimerRef.current != null) {
+            window.clearTimeout(tooltipLeaveTimerRef.current);
+            tooltipLeaveTimerRef.current = null;
+        }
+    }, []);
+
+    const scheduleTooltipDismissFromRef = useCallback(
+        (refNum) => {
+            cancelTooltipDismiss();
+            tooltipLeaveTimerRef.current = window.setTimeout(() => {
+                tooltipLeaveTimerRef.current = null;
+                setTooltip((prev) => (prev?.ref === refNum ? null : prev));
+            }, 320);
+        },
+        [cancelTooltipDismiss]
+    );
+
+    useEffect(
+        () => () => {
+            if (tooltipLeaveTimerRef.current != null) {
+                window.clearTimeout(tooltipLeaveTimerRef.current);
+            }
+        },
+        []
+    );
+
+    useEffect(() => {
+        if (!tooltip?.chunk) return undefined;
+        const onKey = (e) => {
+            if (e.key === 'Escape') {
+                cancelTooltipDismiss();
+                setTooltip(null);
+            }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [tooltip?.chunk, cancelTooltipDismiss]);
 
     const chunkByRef = useMemo(() => {
         const m = new Map();
@@ -97,6 +191,38 @@ export default function GroundedInsightPanel({
         list.sort((a, b) => (a.ref_index || 0) - (b.ref_index || 0));
         return list;
     }, [supportingChunks]);
+
+    /** 本批片段内按 score 排序的位次 + 归一化权重（用于视觉强弱，不改变 [n] 与摘要顺序） */
+    const retrievalRanking = useMemo(() => {
+        const list = sortedSources;
+        const total = list.length;
+        const numeric = list.map((c) => c.score).filter((s) => typeof s === 'number' && !Number.isNaN(s));
+        let minV = 0;
+        let maxV = 1;
+        if (numeric.length) {
+            minV = Math.min(...numeric);
+            maxV = Math.max(...numeric);
+        }
+        const order = [...list].sort((a, b) => {
+            const as = typeof a.score === 'number' && !Number.isNaN(a.score) ? a.score : -Infinity;
+            const bs = typeof b.score === 'number' && !Number.isNaN(b.score) ? b.score : -Infinity;
+            if (bs !== as) return bs - as;
+            return (a.ref_index || 0) - (b.ref_index || 0);
+        });
+        const rankByRef = new Map();
+        order.forEach((ch, i) => rankByRef.set(ch.ref_index, i + 1));
+        const weightByRef = new Map();
+        list.forEach((ch) => {
+            const ri = ch.ref_index;
+            if (typeof ch.score !== 'number' || Number.isNaN(ch.score)) {
+                weightByRef.set(ri, 0.68);
+                return;
+            }
+            const w = maxV > minV ? (ch.score - minV) / (maxV - minV) : 1;
+            weightByRef.set(ri, Math.max(0, Math.min(1, w)));
+        });
+        return { rankByRef, weightByRef, total };
+    }, [sortedSources]);
 
     /** dev 调试区：把 debug 对象翻成可读要点（与 JSON 块配合） */
     const devDebugHumanLines = useMemo(() => {
@@ -138,10 +264,74 @@ export default function GroundedInsightPanel({
 
     const parsedSummary = useMemo(() => parseStructuredGroundedSummary(summary), [summary]);
 
+    /** 摘要阅读顺序内：每个 ref_index 仅在首次出现且 rank===1 时显示 ★，降低重复噪音 */
+    const topStarSlotByKey = useMemo(() => {
+        const rankByRef = retrievalRanking.rankByRef;
+        const m = new Map();
+        const seenTopRef = new Set();
+
+        const walkParts = (parts, prefix) => {
+            parts.forEach((p, i) => {
+                if (p.type !== 'ref') return;
+                const key = `${prefix}-${i}`;
+                const r = p.ref;
+                if (rankByRef.get(r) === 1 && !seenTopRef.has(r)) {
+                    m.set(key, true);
+                    seenTopRef.add(r);
+                } else {
+                    m.set(key, false);
+                }
+            });
+        };
+
+        if (parsedSummary.mode === 'structured') {
+            parsedSummary.sections.forEach((sec, si) => {
+                sec.bullets.forEach((bullet, bi) => {
+                    walkParts(parseSummaryRefs(bullet), `s${si}-b${bi}`);
+                });
+            });
+        } else {
+            walkParts(parseSummaryRefs(parsedSummary.body), 'p');
+        }
+        return m;
+    }, [parsedSummary, retrievalRanking.rankByRef]);
+
+    /** 结构化列表项：含「摘要中首次出现的 top 引用 ★」时做句级弱强调 */
+    const bulletFirstTopKeys = useMemo(() => {
+        const keys = new Set();
+        if (parsedSummary.mode !== 'structured') return keys;
+        const rankByRef = retrievalRanking.rankByRef;
+        parsedSummary.sections.forEach((sec, si) => {
+            sec.bullets.forEach((bullet, bi) => {
+                const parts = parseSummaryRefs(bullet);
+                const hit = parts.some(
+                    (p, i) =>
+                        p.type === 'ref' &&
+                        rankByRef.get(p.ref) === 1 &&
+                        topStarSlotByKey.get(`s${si}-b${bi}-${i}`) === true
+                );
+                if (hit) keys.add(`s${si}-b${bi}`);
+            });
+        });
+        return keys;
+    }, [parsedSummary, retrievalRanking.rankByRef, topStarSlotByKey]);
+
     const flatParts = useMemo(
         () => parseSummaryRefs(parsedSummary.mode === 'plain' ? parsedSummary.body : ''),
         [parsedSummary]
     );
+
+    /** 纯文本摘要：若存在首次 top ★，整块左侧弱强调（无语义列表时） */
+    const plainHasFirstTopAnchor = useMemo(() => {
+        if (parsedSummary.mode !== 'plain') return false;
+        const rankByRef = retrievalRanking.rankByRef;
+        return flatParts.some(
+            (p, i) =>
+                p.type === 'ref' &&
+                rankByRef.get(p.ref) === 1 &&
+                topStarSlotByKey.get(`p-${i}`) === true
+        );
+    }, [parsedSummary.mode, flatParts, retrievalRanking.rankByRef, topStarSlotByKey]);
 
     useEffect(() => {
         const prev = prevSummaryRef.current;
@@ -156,37 +346,61 @@ export default function GroundedInsightPanel({
 
     useEffect(() => {
         if (pulseRefIndex == null) return undefined;
-        const id = window.setTimeout(() => setPulseRefIndex(null), 900);
+        const ms = pulseIsTopEvidence ? 1200 : 900;
+        const id = window.setTimeout(() => {
+            setPulseRefIndex(null);
+            setPulseIsTopEvidence(false);
+        }, ms);
         return () => clearTimeout(id);
-    }, [pulseRefIndex]);
+    }, [pulseRefIndex, pulseIsTopEvidence]);
 
     const scrollToSource = useCallback((ref) => {
         const el = document.getElementById(`grounded-source-${baseId}-${ref}`);
         el?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         sourcesColRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        requestAnimationFrame(() => {
+            const btn = el?.querySelector?.('.grounded-insight__source-main');
+            if (btn && typeof btn.focus === 'function') {
+                btn.focus({ preventScroll: true });
+            }
+        });
     }, [baseId]);
 
     const onRefClick = useCallback(
         (ref) => {
             setActiveRef(ref);
             setPulseRefIndex(ref);
+            setPulseIsTopEvidence(retrievalRanking.rankByRef.get(ref) === 1);
             requestAnimationFrame(() => {
                 scrollToSource(ref);
                 previewColRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             });
         },
-        [scrollToSource]
+        [scrollToSource, retrievalRanking.rankByRef]
     );
 
     const refPartProps = useMemo(
         () => ({
             chunkByRef,
+            rankByRef: retrievalRanking.rankByRef,
+            topStarSlotByKey,
             activeRef,
             t,
             setTooltip,
             onRefClick,
+            cancelTooltipDismiss,
+            scheduleTooltipDismissFromRef,
         }),
-        [chunkByRef, activeRef, t, onRefClick]
+        [
+            chunkByRef,
+            retrievalRanking.rankByRef,
+            topStarSlotByKey,
+            activeRef,
+            t,
+            onRefClick,
+            cancelTooltipDismiss,
+            scheduleTooltipDismissFromRef,
+        ]
     );
 
     const activeChunk = activeRef != null ? chunkByRef.get(activeRef) : null;
@@ -221,6 +435,15 @@ export default function GroundedInsightPanel({
                 </div>
             )}
 
+            {sortedSources.length > 0 ? (
+                <p className="grounded-insight__star-legend" role="note">
+                    <span className="grounded-insight__star-legend-mark" aria-hidden>
+                        {t('grounded_insight_ref_top_mark')}
+                    </span>{' '}
+                    {t('grounded_insight_star_legend')}
+                </p>
+            ) : null}
+
             <div
                 className={`grounded-insight__summary-wrap${summaryAnimClass ? ` ${summaryAnimClass}` : ''}`}
                 aria-label={t('grounded_insight_summary_label')}
@@ -233,10 +456,21 @@ export default function GroundedInsightPanel({
                                 {sec.bullets.length ? (
                                     <ul className="grounded-insight__bullet-list">
                                         {sec.bullets.map((bullet, bi) => (
-                                            <li key={`${si}-${bi}`} className="grounded-insight__bullet">
+                                            <li
+                                                key={`${si}-${bi}`}
+                                                className={[
+                                                    'grounded-insight__bullet',
+                                                    bulletFirstTopKeys.has(`s${si}-b${bi}`)
+                                                        ? 'grounded-insight__bullet--top-evidence-line'
+                                                        : '',
+                                                ]
+                                                    .filter(Boolean)
+                                                    .join(' ')}
+                                            >
                                                 <GroundedRefParts
                                                     parts={parseSummaryRefs(bullet)}
                                                     keyPrefix={`s${si}-b${bi}`}
+                                                    partKeyPrefix={`s${si}-b${bi}`}
                                                     {...refPartProps}
                                                 />
                                             </li>
@@ -247,8 +481,16 @@ export default function GroundedInsightPanel({
                         ))}
                     </div>
                 ) : (
-                    <div className="grounded-insight__summary grounded-insight__summary--plain">
-                        <GroundedRefParts parts={flatParts} keyPrefix="p" {...refPartProps} />
+                    <div
+                        className={[
+                            'grounded-insight__summary',
+                            'grounded-insight__summary--plain',
+                            plainHasFirstTopAnchor ? 'grounded-insight__summary--top-evidence-anchor' : '',
+                        ]
+                            .filter(Boolean)
+                            .join(' ')}
+                    >
+                        <GroundedRefParts parts={flatParts} keyPrefix="p" partKeyPrefix="p" {...refPartProps} />
                     </div>
                 )}
             </div>
@@ -268,6 +510,9 @@ export default function GroundedInsightPanel({
                                 const fn = ch.file_name || t('grounded_insight_unknown_doc');
                                 const isActive = activeRef === r;
                                 const isPulse = pulseRefIndex === r;
+                                const pulseStrong = isPulse && pulseIsTopEvidence;
+                                const rank = retrievalRanking.rankByRef.get(r) ?? 0;
+                                const w = retrievalRanking.weightByRef.get(r) ?? 0.72;
                                 return (
                                     <div
                                         key={`src-${r}-${fn}`}
@@ -275,10 +520,15 @@ export default function GroundedInsightPanel({
                                         className={[
                                             'grounded-insight__source',
                                             isActive ? 'grounded-insight__source--active' : '',
-                                            isPulse ? 'grounded-insight__source--pulse' : '',
+                                            pulseStrong
+                                                ? 'grounded-insight__source--pulse-top'
+                                                : isPulse
+                                                  ? 'grounded-insight__source--pulse'
+                                                  : '',
                                         ]
                                             .filter(Boolean)
                                             .join(' ')}
+                                        style={isActive ? undefined : { '--grounded-score-w': String(w) }}
                                         role="listitem"
                                     >
                                         <button
@@ -286,8 +536,21 @@ export default function GroundedInsightPanel({
                                             className="grounded-insight__source-main"
                                             onClick={() => setActiveRef(r)}
                                         >
-                                            <div className="grounded-insight__source-label">
-                                                [{r}] {fn}
+                                            <div className="grounded-insight__source-label-row">
+                                                {rank > 0 ? (
+                                                    <span
+                                                        className="grounded-insight__source-rank"
+                                                        title={t('grounded_insight_source_rank_title', {
+                                                            rank,
+                                                            total: retrievalRanking.total,
+                                                        })}
+                                                    >
+                                                        #{rank}
+                                                    </span>
+                                                ) : null}
+                                                <div className="grounded-insight__source-label">
+                                                    [{r}] {fn}
+                                                </div>
                                             </div>
                                             <div className="grounded-insight__source-snippet">{ch.snippet || ''}</div>
                                             {typeof ch.score === 'number' ? (
@@ -313,17 +576,34 @@ export default function GroundedInsightPanel({
                             ref={previewColRef}
                             className={[
                                 'grounded-insight__preview',
-                                pulseRefIndex != null && activeRef === pulseRefIndex
-                                    ? 'grounded-insight__preview--pulse'
-                                    : '',
+                                pulseRefIndex != null &&
+                                activeRef === pulseRefIndex &&
+                                pulseIsTopEvidence
+                                    ? 'grounded-insight__preview--pulse-top'
+                                    : pulseRefIndex != null && activeRef === pulseRefIndex
+                                      ? 'grounded-insight__preview--pulse'
+                                      : '',
                             ]
                                 .filter(Boolean)
                                 .join(' ')}
                         >
                             {activeChunk ? (
                                 <>
-                                    <div className="grounded-insight__preview-title">
-                                        [{activeChunk.ref_index}] {activeChunk.file_name || ''}
+                                    <div className="grounded-insight__preview-title-row">
+                                        {retrievalRanking.rankByRef.get(activeChunk.ref_index) ? (
+                                            <span
+                                                className="grounded-insight__preview-rank"
+                                                title={t('grounded_insight_source_rank_title', {
+                                                    rank: retrievalRanking.rankByRef.get(activeChunk.ref_index),
+                                                    total: retrievalRanking.total,
+                                                })}
+                                            >
+                                                #{retrievalRanking.rankByRef.get(activeChunk.ref_index)}
+                                            </span>
+                                        ) : null}
+                                        <div className="grounded-insight__preview-title">
+                                            [{activeChunk.ref_index}] {activeChunk.file_name || ''}
+                                        </div>
                                     </div>
                                     {typeof activeChunk.score === 'number' ? (
                                         <div className="grounded-insight__preview-score">
@@ -333,9 +613,11 @@ export default function GroundedInsightPanel({
                                     <div
                                         className={[
                                             'grounded-insight__preview-body',
-                                            pulseRefIndex === activeChunk.ref_index
-                                                ? 'grounded-insight__preview-body--pulse'
-                                                : '',
+                                            pulseRefIndex === activeChunk.ref_index && pulseIsTopEvidence
+                                                ? 'grounded-insight__preview-body--pulse-top'
+                                                : pulseRefIndex === activeChunk.ref_index
+                                                  ? 'grounded-insight__preview-body--pulse'
+                                                  : '',
                                         ]
                                             .filter(Boolean)
                                             .join(' ')}
@@ -370,13 +652,118 @@ export default function GroundedInsightPanel({
                         left: Math.min(tooltip.x, typeof window !== 'undefined' ? window.innerWidth - 380 : 0),
                         top: tooltip.y,
                     }}
+                    onMouseEnter={cancelTooltipDismiss}
+                    onMouseLeave={() => {
+                        cancelTooltipDismiss();
+                        setTooltip(null);
+                    }}
                 >
-                    <div className="grounded-insight__tooltip-file">{tooltip.chunk.file_name || ''}</div>
-                    {typeof tooltip.chunk.score === 'number' ? (
-                        <div className="grounded-insight__tooltip-score">
-                            {t('grounded_insight_score_short', { score: tooltip.chunk.score.toFixed(3) })}
-                        </div>
-                    ) : null}
+                    <button
+                        type="button"
+                        className="grounded-insight__tooltip-dismiss"
+                        aria-label={t('grounded_insight_tooltip_close')}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            cancelTooltipDismiss();
+                            setTooltip(null);
+                        }}
+                    >
+                        <X size={14} strokeWidth={2} aria-hidden />
+                    </button>
+                    {(() => {
+                        const tipRank = retrievalRanking.rankByRef.get(tooltip.chunk.ref_index);
+                        const tipIsTopBatch = tipRank === 1;
+                        const tipScored = typeof tooltip.chunk.score === 'number';
+                        return (
+                            <>
+                                <div className="grounded-insight__tooltip-head">
+                                    {tipRank ? (
+                                        <span
+                                            className="grounded-insight__tooltip-rank"
+                                            title={t('grounded_insight_source_rank_title', {
+                                                rank: tipRank,
+                                                total: retrievalRanking.total,
+                                            })}
+                                        >
+                                            #{tipRank}
+                                        </span>
+                                    ) : null}
+                                    <div className="grounded-insight__tooltip-file">{tooltip.chunk.file_name || ''}</div>
+                                </div>
+                                {tipIsTopBatch ? (
+                                    <p className="grounded-insight__tooltip-top-evidence">
+                                        {tipScored
+                                            ? t('grounded_insight_tooltip_top_evidence_scored', {
+                                                  score: tooltip.chunk.score.toFixed(3),
+                                              })
+                                            : t('grounded_insight_tooltip_top_evidence_plain')}
+                                    </p>
+                                ) : null}
+                                {tipScored && !tipIsTopBatch ? (
+                                    <div className="grounded-insight__tooltip-score">
+                                        {t('grounded_insight_score_short', { score: tooltip.chunk.score.toFixed(3) })}
+                                    </div>
+                                ) : null}
+                                {Array.isArray(tooltip.coCitationRefs) && tooltip.coCitationRefs.length > 0 ? (
+                                    <p className="grounded-insight__tooltip-co-citation" role="note">
+                                        <span className="grounded-insight__tooltip-co-citation-label">
+                                            {t('grounded_insight_tooltip_also_supported_before')}
+                                        </span>
+                                        {tooltip.coCitationRefs.map((r, idx) => {
+                                            const coRank = retrievalRanking.rankByRef.get(r) ?? 0;
+                                            return (
+                                                <span key={`co-${r}`} className="grounded-insight__tooltip-co-citation-item">
+                                                    {idx > 0 ? (
+                                                        <span className="grounded-insight__tooltip-co-citation-sep" aria-hidden>
+                                                            {', '}
+                                                        </span>
+                                                    ) : null}
+                                                    <button
+                                                        type="button"
+                                                        className="grounded-insight__tooltip-co-citation-ref"
+                                                        aria-label={
+                                                            coRank > 0
+                                                                ? t('grounded_insight_tooltip_co_ref_aria', {
+                                                                      n: r,
+                                                                      rank: coRank,
+                                                                      total: retrievalRanking.total,
+                                                                  })
+                                                                : t('grounded_insight_ref_aria', { n: r })
+                                                        }
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            cancelTooltipDismiss();
+                                                            setTooltip(null);
+                                                            onRefClick(r);
+                                                        }}
+                                                    >
+                                                        [{r}]
+                                                    </button>
+                                                    {coRank > 0 ? (
+                                                        <span
+                                                            className="grounded-insight__tooltip-co-citation-rank"
+                                                            title={t('grounded_insight_source_rank_title', {
+                                                                rank: coRank,
+                                                                total: retrievalRanking.total,
+                                                            })}
+                                                            aria-hidden
+                                                        >
+                                                            #{coRank}
+                                                        </span>
+                                                    ) : null}
+                                                </span>
+                                            );
+                                        })}
+                                        {t('grounded_insight_tooltip_also_supported_after') ? (
+                                            <span className="grounded-insight__tooltip-co-citation-after">
+                                                {t('grounded_insight_tooltip_also_supported_after')}
+                                            </span>
+                                        ) : null}
+                                    </p>
+                                ) : null}
+                            </>
+                        );
+                    })()}
                     <div className="grounded-insight__tooltip-snippet">{tooltip.chunk.snippet || ''}</div>
                 </div>
             ) : null}

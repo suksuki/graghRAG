@@ -81,3 +81,21 @@
     color: #fca5a5;
     font-size: 13px;
 }
+
+/* 分隔「有据摘要」与 di_* 聚合区，避免用户误以为刚上传就应出现在下方 */
+.insight-page__corpus-bridge {
+    margin: 0 0 10px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(51, 65, 85, 0.55);
+    background: rgba(15, 23, 42, 0.45);
+    font-size: 12px;
+    line-height: 1.55;
+    color: #94a3b8;
+}
+
+.insight-page__divider {
+    margin: 8px 0 20px;
+    border: none;
+    border-top: 1px solid rgba(51, 65, 85, 0.5);
+}
