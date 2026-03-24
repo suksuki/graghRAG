@@ -67,11 +67,11 @@ def upload_route(files: List[UploadFile] = File(...)):
   - 将文件流写入到 `settings.DATA_RAW_DIR`。
   - 记录成功写入的文件名列表 `saved_files`。
 - 调度：
-  - 对每个 `fname`：
-    - 写入 Redis 状态：`ingestion:{fname} = "queued"`。
-    - 调用 `ingest_document_task.delay(file_path)` 投递 Celery 任务。
+  - **优先**：对每个 `fname` 写入 Redis 状态 `ingestion:{fname} = "queued"`，并调用 `ingest_document_task.delay(file_path)` 投递 Celery。
+  - **降级（重要）**：若 Redis/Celery 不可用导致任一脚本入队失败，或 `jobs` 数量与 `saved_files` 不一致，则在 **API 进程内** 调用 `ingestor.ingest_data(DATA_RAW_DIR, progress_callback=…)` 做**同步摄取**，避免「文件已落盘但从未入向量/图」。
+    - 响应：`status: "completed"`、`ingestion_mode: "inline"`、`jobs: []`（前端无需轮询 job，应直接刷新文档列表）。
 
-返回值示例：
+返回值示例（异步队列）：
 
 ```json
 {
@@ -80,6 +80,8 @@ def upload_route(files: List[UploadFile] = File(...)):
   "files": ["file1.pdf", "file2.txt"]
 }
 ```
+
+同步降级时额外带 `"ingestion_mode": "inline"`。
 
 ---
 
@@ -145,10 +147,10 @@ class SMEIngestor:
 
 在 `ingest_data` 开头：
 
-1. 查询 Neo4j 中**已索引的文件**：
+1. 查询 Neo4j 中 **`:IngestedFile` 状态**（文件名 → `content_hash`；旧数据无 hash 时值为 `None`）：
 
 ```python
-graph_indexed = self.graph_engine.get_indexed_files()
+graph_state = self.graph_engine.get_graph_ingest_state()
 ```
 
 2. 查询 pgvector 中**已存在的文件名**：
@@ -159,7 +161,11 @@ vector_indexed = _get_vector_indexed_files(self.vector_engine)
 
 3. 扫描目录中所有文件 `all_files`，根据上述集合计算出：
    - `new_for_vector`：需要写向量的新文件。
-   - `new_for_graph`：需要建图的新文件。
+   - `new_for_graph`：无 `IngestedFile`、或磁盘文件 SHA256 与 `content_hash` 不一致的文件（内容更新后自动重跑建图）。无 `content_hash` 的旧 `IngestedFile` 视为已建图（兼容存量库）。
+
+4. 分块后为每个 node 写入 metadata `content_sha256`，供写入 `IngestedFile` 时落库。
+
+5. **Document Intelligence**（`core/document_intelligence.py`）：对每个 **新写入向量** 的文件，取前 3 个 chunk 拼接（约 ≤12000 字符），用主 LLM 输出 JSON（摘要 / 关键词 / 主题 / 实体 / 要点 / `doc_type`），写入各 chunk 的 `di_*` metadata；同一 `file_name + content_sha256` 命中进程内缓存避免重复调用。语言由 `DOC_INTEL_LANG`（默认 `zh`）控制。
 
 如果两者都为空，则直接返回，不做任何操作。
 
@@ -207,7 +213,7 @@ vector_indexed = _get_vector_indexed_files(self.vector_engine)
   - `llm`：主模型，用于图查询等。
   - `extraction_llm`：专用于实体/关系抽取的小模型（受控配置，低上下文低输出）。
 - 使用 `Neo4jPropertyGraphStore` 维护图。
-- `get_indexed_files()` 用于增量跳过已处理文件。
+- `get_graph_ingest_state()` / `get_indexed_files()` 用于增量；建图完成条件为 **关系增量 > 0 或实体增量 ≥ 2**，满足后才 `MERGE (:IngestedFile)` 并写入 `content_hash`、`updated_at`。
 - `create_index(nodes, num_workers, max_paths_per_chunk)` 用于抽取图结构。
 
 ### 5.2 写入流程

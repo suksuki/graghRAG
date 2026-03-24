@@ -2,6 +2,8 @@
 
 GraphRAG 平台围绕「**文档 → 知识图谱 + 向量库 → LLM 问答**」这一主线构建，整体可以分为以下层次：
 
+> **产品边界**：以文档智能为主、图为增强层，避免 Graph-first 倒置；见 [`DOCUMENT_INTELLIGENCE_POSITIONING.md`](./DOCUMENT_INTELLIGENCE_POSITIONING.md)。
+
 - **API 层（FastAPI）**：`api/main.py` + `api/routes/*`
 - **控制器层（Controllers）**：`api/controllers/*`
 - **查询编排层（QueryPipeline）**：`pipelines/query_pipeline.py`（含流式 `run_stream()`，首字与延迟指标回传）
@@ -184,9 +186,9 @@ API 层本身**不包含业务逻辑**，只负责路由注册与基础健康检
 
 1. 从 `settings.DATA_RAW_DIR` 扫描待处理文件。
 2. 查询：
-   - `GraphEngine.get_indexed_files()`：Neo4j 已索引文件。
+   - `GraphEngine.get_graph_ingest_state()`：`IngestedFile` 与 `content_hash`（结合磁盘 SHA256 决定是否需要重跑建图）；`get_indexed_files()` 为已标记文件名集合。
    - `_get_vector_indexed_files(VectorEngine)`：pgvector 中已存在的文件名。
-3. 只针对**新文件**构建待处理列表。
+3. 分别计算向量增量与图增量（图侧支持**同文件内容变更后自动重试**）。
 4. 使用 `SimpleDirectoryReader` 读取这些文件。
 5. 使用 `SentenceSplitter` 按 `CHUNK_SIZE` / `CHUNK_OVERLAP` 分块得到 `nodes`。
 6. 新文件的节点写入 `VectorEngine.add_documents(nodes)`。

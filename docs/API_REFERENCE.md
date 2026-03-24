@@ -98,17 +98,25 @@ curl -X POST http://localhost:8000/upload \
 
 ```json
 {
-  "status": "processing",        // 或 "idle"
+  "status": "processing",
+  "health": "processing",
   "message": "Graph indexing: 5/20 chunks (70%)",
-  "progress": 70,                // 0-100
+  "progress": 70,
   "graph_done": 5,
   "graph_total": 20,
   "files_in_batch": 3,
   "file_names": ["a.pdf", "b.txt", "c.docx"],
-  "node_count": 128,             // Neo4j 节点数
-  "file_count": 10               // 原始目录中文件数
+  "updated_at": 1730000000,
+  "node_count": 128,
+  "file_count": 10,
+  "eligible_file_count": 4,
+  "vector_chunk_count": 120
 }
 ```
+
+- **`health`**：`ok` | `processing` | `stalled` | `failed`。`stalled` 表示任务仍为 processing 但 Redis 心跳超过约 60s 未更新；`failed` 含 API 失败、硬超时、或「磁盘有可摄取文件但向量表行数为 0」（向量统计不可用时跳过后者）。
+- **`eligible_file_count`**：扩展名在白名单内的磁盘文件数（与知识库列表一致）。
+- **`vector_chunk_count`**：当前 PGVector 表行数；查询失败时为 `null`。
 
 ---
 
@@ -302,6 +310,37 @@ curl -X POST http://localhost:8000/upload \
 
 ---
 
+## 10. 融合检索 `POST /api/v1/hybrid-search`
+
+- **Purpose**：在**不替代**现有 `GET /search` 的前提下，提供 **Vector-first、Graph-augmented** 的混合检索：先向量召回 chunk，再从 `di_entities` / 元数据 / 问句词块得到种子实体，在 Neo4j 上做一阶扩展。
+- **Design principle**：**Vector-first, graph-augmented** —— 图是增强信号，不是主检索入口；与 `docs/DOCUMENT_INTELLIGENCE_POSITIONING.md` 一致。
+
+### 请求体（JSON）
+
+| 字段 | 类型 | 默认 | 说明 |
+|------|------|------|------|
+| `query` | string | 必填 | 用户问题或关键词 |
+| `top_k` | int | 5 | 向量召回条数（1–30） |
+| `graph_expand_k` | int | 20 | 图扩展关系条数上限（1–100） |
+| `min_kg_conf` | float | 取配置 `KG_MIN_EDGE_CONFIDENCE_FOR_QUERY` | 关系最小 `kg_confidence`（0–1） |
+| `include_fallback` | bool | false | 为 true 时包含低置信 / lexical fallback 边（等价于图侧 `min` 放宽为 0） |
+
+### 响应要点
+
+- `results[]`：`type` 为 `chunk`（向量）或 `relation`（图三元组）。**不单独返回 `entity` 行**，实体信息体现在 `relation.triplet` 与 `debug.seed_entities`。
+- 关系项 `score` = `min(1, score_base + score_relevance)`：`score_base` 来自 `kg_confidence` 与 fallback 降权；`score_relevance` 为问句词元与主/宾/关系类型匹配的小额加分（上限约 0.35）。
+- `debug`：`vector_hits`、`graph_nodes`、`graph_edges`、`seed_entities`。
+
+### 示例（curl）
+
+```bash
+curl -s -X POST http://localhost:8000/api/v1/hybrid-search \
+  -H "Content-Type: application/json" \
+  -d '{"query":"示例问题","top_k":5,"graph_expand_k":20,"include_fallback":false}'
+```
+
+---
+
 ## 小结
 
 以上接口构成了 GraphRAG 平台的主要 API 面，分别覆盖：
@@ -309,12 +348,14 @@ curl -X POST http://localhost:8000/upload \
 - 文档生命周期：上传 / 列表 / 删除。
 - 图谱与摄取进度：图数据、摄取状态、图谱概览（`/graph/overview`）、推荐问题（`/graph/suggested_questions`）。
 - 问答能力：基于 GraphRAG v2 的 `/query` 与流式 `/query/stream`。
+- **融合检索**：`POST /api/v1/hybrid-search`（向量主路径 + 图扩展，独立灰度）。
 - 系统配置：读取 / 测试连接 / 更新模型配置。
 
 更多细节可参考：
 
 - `docs/INGESTION_PIPELINE.md`
 - `docs/QUERY_PIPELINE.md`
+- `docs/DOCUMENT_INTELLIGENCE_POSITIONING.md`
 - `docs/OPTIMIZATION_LLM_LATENCY.md`
 - `docs/DEPLOYMENT.md`
 - `docs/CHANGELOG.md`

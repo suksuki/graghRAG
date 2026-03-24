@@ -1,14 +1,22 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Send, Upload, Share2, Database, Network, Search, FileText, Image as ImageIcon, CheckCircle, Loader2, Languages, Trash2, Settings as SettingsIcon, Activity, Zap, Clock, User } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Send, Upload, Share2, Database, Network, Search, FileText, Image as ImageIcon, CheckCircle, Loader2, Languages, Trash2, Settings as SettingsIcon, Activity, Zap, Clock, User, Library, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
+import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import './App.css';
 import GraphExplorer from './pages/GraphExplorer.jsx';
+import DocumentPage from './pages/DocumentPage.jsx';
+import DocumentDetail from './pages/DocumentDetail.jsx';
+import EntityPage from './pages/EntityPage.jsx';
+import SearchPage from './pages/SearchPage.jsx';
+import InsightPage from './pages/InsightPage.jsx';
 
 const App = () => {
     const { t, i18n } = useTranslation();
-    const [activeTab, setActiveTab] = useState('chat'); // chat, graph, docs, settings
+    const navigate = useNavigate();
+    const location = useLocation();
+    const [activeTab, setActiveTab] = useState('chat'); // chat, graph, documents, search, entity, docs, settings
     const [query, setQuery] = useState('');
     const [queryMode, setQueryMode] = useState('vector'); // vector | graph | hybrid
     const [messages, setMessages] = useState([{ role: 'assistant', text: t('welcome') }]);
@@ -25,7 +33,55 @@ const App = () => {
     const [expandedGraph, setExpandedGraph] = useState({});
     const [errorModal, setErrorModal] = useState(null);
 
+    // 文档中心 / 搜索 / 实体页（P0 产品化）
+    const [selectedLibraryDoc, setSelectedLibraryDoc] = useState(null);
+    const [entityViewName, setEntityViewName] = useState(null);
+
     const chatEndRef = useRef(null);
+
+    const openEntityPage = (name) => {
+        if (!name) return;
+        setEntityViewName(name);
+        setActiveTab('entity');
+        navigate(`/entity/${encodeURIComponent(name)}`);
+    };
+
+    // 与 URL 同步：/search、/documents、/docs/{doc_id}
+    useEffect(() => {
+        const pathname = location.pathname || '';
+        if (pathname.startsWith('/entity/')) {
+            const encoded = pathname.slice('/entity/'.length);
+            if (encoded) {
+                try {
+                    setEntityViewName(decodeURIComponent(encoded));
+                    setActiveTab('entity');
+                } catch (_) { /* ignore */ }
+            }
+            return;
+        }
+        if (pathname.startsWith('/docs/')) {
+            const encoded = pathname.slice('/docs/'.length);
+            if (encoded) {
+                try {
+                    setSelectedLibraryDoc(decodeURIComponent(encoded));
+                    setActiveTab('documents');
+                } catch (_) { /* ignore malformed path */ }
+            }
+            return;
+        }
+        if (pathname === '/search') {
+            setActiveTab('search');
+            return;
+        }
+        if (pathname === '/insight') {
+            setActiveTab('insight');
+            return;
+        }
+        if (pathname === '/documents') {
+            setSelectedLibraryDoc(null);
+            setActiveTab('documents');
+        }
+    }, [location.pathname]);
 
     const triggerFollowupEntityQuery = (entity) => {
         try {
@@ -117,7 +173,7 @@ const App = () => {
             fetchAppSettings();
             fetchAvailableModels();
         }
-    }, [activeTab]);
+    }, [activeTab, selectedLibraryDoc]);
 
     const fetchIngestionStatus = async () => {
         try {
@@ -131,6 +187,15 @@ const App = () => {
             }));
         }
     };
+
+    const persistLastUpload = useCallback((payload) => {
+        try {
+            localStorage.setItem('graphrag_last_upload', JSON.stringify({ at: Date.now(), ...payload }));
+            window.dispatchEvent(new Event('graphrag_last_upload_changed'));
+        } catch (_) {
+            /* ignore */
+        }
+    }, []);
 
     const fetchDocuments = async () => {
         try {
@@ -387,6 +452,17 @@ const App = () => {
             setLastUploadedFiles(names);
             setUploadJobs(jobs);
             fetchIngestionStatus();
+            persistLastUpload({
+                status: res.data?.status || (jobs.length > 0 ? 'queued' : 'unknown'),
+                ingestion_mode: res.data?.ingestion_mode || (jobs.length > 0 ? 'celery' : 'unknown'),
+                files: names,
+            });
+            if (res.data?.ingestion_mode === 'inline' || res.data?.status === 'completed') {
+                fetchDocuments();
+                try {
+                    window.dispatchEvent(new Event('graphrag_refetch_docs'));
+                } catch (_) { /* ignore */ }
+            }
             if (names.length > 0) setTimeout(() => setLastUploadedFiles([]), 8000);
         } catch (e) {
             openErrorModal(e?.response?.data?.error || { message: t('upload_failed'), detail: e?.response?.data?.detail || e?.message || t('unknown_error') });
@@ -421,6 +497,22 @@ const App = () => {
                 const allDone = statuses.every(s => s.status === 'done' || s.status === 'failed');
                 if (allDone) {
                     clearInterval(timer);
+                    const anyFailed = statuses.some(s => s.status === 'failed');
+                    const doneFiles = statuses.map((s) => s.file).filter(Boolean);
+                    try {
+                        localStorage.setItem(
+                            'graphrag_last_upload',
+                            JSON.stringify({
+                                at: Date.now(),
+                                status: anyFailed ? 'failed' : 'completed',
+                                ingestion_mode: 'celery',
+                                files: doneFiles,
+                            })
+                        );
+                        window.dispatchEvent(new Event('graphrag_last_upload_changed'));
+                    } catch (_) {
+                        /* ignore */
+                    }
                     fetchDocuments();
                     fetchIngestionStatus();
                 }
@@ -460,16 +552,25 @@ const App = () => {
                 </div>
 
                 <nav className="nav-menu">
-                    <div className={`nav-item ${activeTab === 'chat' ? 'active' : ''}`} onClick={() => setActiveTab('chat')}>
+                    <div className={`nav-item ${activeTab === 'chat' ? 'active' : ''}`} onClick={() => { navigate('/'); setActiveTab('chat'); }}>
                         <Database size={18} /><span>{t('knowledge_base')}</span>
                     </div>
-                    <div className={`nav-item ${activeTab === 'graph' ? 'active' : ''}`} onClick={() => setActiveTab('graph')}>
+                    <div className={`nav-item ${activeTab === 'graph' ? 'active' : ''}`} onClick={() => { navigate('/'); setActiveTab('graph'); }}>
                         <Network size={18} /><span>{t('graph_overview')}</span>
                     </div>
-                    <div className={`nav-item ${activeTab === 'docs' ? 'active' : ''}`} onClick={() => setActiveTab('docs')}>
+                    <div className={`nav-item ${activeTab === 'documents' ? 'active' : ''}`} onClick={() => { setSelectedLibraryDoc(null); navigate('/documents'); setActiveTab('documents'); }}>
+                        <Library size={18} /><span>{t('nav_document_center')}</span>
+                    </div>
+                    <div className={`nav-item ${activeTab === 'insight' ? 'active' : ''}`} onClick={() => { navigate('/insight'); setActiveTab('insight'); }}>
+                        <Sparkles size={18} /><span>{t('nav_insight')}</span>
+                    </div>
+                    <div className={`nav-item ${activeTab === 'search' ? 'active' : ''}`} onClick={() => { navigate('/search'); setActiveTab('search'); }}>
+                        <Search size={18} /><span>{t('nav_search')}</span>
+                    </div>
+                    <div className={`nav-item ${activeTab === 'docs' ? 'active' : ''}`} onClick={() => { navigate('/'); setActiveTab('docs'); }}>
                         <FileText size={18} /><span>{t('doc_management')}</span>
                     </div>
-                    <div className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')}>
+                    <div className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => { navigate('/'); setActiveTab('settings'); }}>
                         <SettingsIcon size={18} /><span>{t('system_settings')}</span>
                     </div>
                 </nav>
@@ -832,6 +933,55 @@ const App = () => {
                                 <GraphExplorer />
                             </div>
                         </div>
+                    )}
+
+                    {activeTab === 'documents' && (
+                        selectedLibraryDoc ? (
+                            <DocumentDetail
+                                docId={selectedLibraryDoc}
+                                onBack={() => {
+                                    setSelectedLibraryDoc(null);
+                                    navigate('/documents');
+                                }}
+                                onEntityNavigate={openEntityPage}
+                                onSuggestedQuestion={(q) => {
+                                    setActiveTab('chat');
+                                    setQuery(q);
+                                    setTimeout(() => submitQuery(q), 0);
+                                }}
+                            />
+                        ) : (
+                            <DocumentPage />
+                        )
+                    )}
+
+                    {activeTab === 'search' && <SearchPage />}
+
+                    {activeTab === 'insight' && <InsightPage />}
+
+                    {activeTab === 'entity' && (
+                        entityViewName ? (
+                            <EntityPage
+                                entityName={entityViewName}
+                                onBack={() => {
+                                    setEntityViewName(null);
+                                    navigate('/documents');
+                                }}
+                                onNavigateEntity={(name) => openEntityPage(name)}
+                                onNavigateDocument={(docId) => navigate(`/docs/${encodeURIComponent(docId)}`)}
+                                onSuggestedQuestion={(q) => {
+                                    setActiveTab('chat');
+                                    setQuery(q);
+                                    setTimeout(() => submitQuery(q), 0);
+                                }}
+                            />
+                        ) : (
+                            <div className="docs-container" style={{ padding: '24px 20px' }}>
+                                <div className="glass" style={{ padding: '24px', borderRadius: '12px', textAlign: 'center', opacity: 0.85 }}>
+                                    {t('entity_page_hint')}
+                                </div>
+                            </div>
+                        )
                     )}
 
                     {activeTab === 'docs' && (

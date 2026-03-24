@@ -14,6 +14,8 @@ GraphRAG Platform 是一个面向中小企业的 **图谱 + 向量 + LLM** 知�
 
 更多架构细节见 `docs/ARCHITECTURE.md`。
 
+**产品定位（文档智能 vs 行业图谱）**：图与向量如何分工、如何避免「图为主角」的架构倒置，见 [`docs/DOCUMENT_INTELLIGENCE_POSITIONING.md`](docs/DOCUMENT_INTELLIGENCE_POSITIONING.md)。
+
 ## 技术栈
 
 | 组件     | 技术 |

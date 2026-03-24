@@ -17,6 +17,7 @@ description: >
   - Pydantic schemas live in `api/schemas.py`
 - **Controllers (C)**:
   - `api/controllers/` — request orchestration and business logic
+  - Example: `corpus_insight_controller.py` — aggregates `di_*` metadata across docs for `POST /insights/corpus`
   - Example: `api/controllers/query_controller.py` implements the Graph+Vector hybrid query
 - **Views / Routes (V)**:
   - `api/routes/` — FastAPI `APIRouter` modules, HTTP-only concerns

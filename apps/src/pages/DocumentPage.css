@@ -1,0 +1,242 @@
+/* 文档列表 /documents — 暗色 + 卡片 */
+.document-page {
+    --dp-bg: #0b0e14;
+    --dp-card: rgba(15, 23, 42, 0.75);
+    --dp-border: rgba(99, 102, 241, 0.2);
+    --dp-muted: #94a3b8;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 20px 20px 32px;
+    min-height: 100%;
+}
+
+.document-page__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 20px;
+}
+
+.document-page__title {
+    font-size: 22px;
+    font-weight: 700;
+    color: #f8fafc;
+    margin: 0 0 6px;
+}
+
+.document-page__subtitle {
+    font-size: 13px;
+    color: var(--dp-muted);
+    margin: 0;
+    max-width: 520px;
+    line-height: 1.5;
+}
+
+.document-page__toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+}
+
+.document-page__filter {
+    min-width: 200px;
+    flex: 1;
+    max-width: 360px;
+    padding: 10px 14px;
+    border-radius: 10px;
+    border: 1px solid rgba(51, 65, 85, 0.6);
+    background: rgba(15, 23, 42, 0.6);
+    color: #e2e8f0;
+    font-size: 13px;
+    outline: none;
+}
+
+.document-page__filter::placeholder {
+    color: rgba(148, 163, 184, 0.75);
+}
+
+.document-page__sort {
+    padding: 9px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(51, 65, 85, 0.6);
+    background: rgba(15, 23, 42, 0.8);
+    color: #e2e8f0;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.document-page__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 14px;
+}
+
+.document-page__card {
+    position: relative;
+    text-align: left;
+    width: 100%;
+    padding: 18px;
+    padding-bottom: 36px;
+    border-radius: 14px;
+    background: var(--dp-card);
+    border: 1px solid rgba(51, 65, 85, 0.45);
+    cursor: pointer;
+    transition: border-color 0.2s, box-shadow 0.2s, transform 0.18s ease;
+    color: inherit;
+    font: inherit;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.document-page__card:hover,
+.document-page__card:focus-visible {
+    border-color: var(--dp-border);
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.25);
+    transform: scale(1.01);
+    outline: none;
+}
+
+.document-page__card-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    width: 100%;
+}
+
+.document-page__card-date {
+    flex-shrink: 0;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: rgba(148, 163, 184, 0.9);
+    white-space: nowrap;
+    margin-top: 3px;
+}
+
+.document-page__card-hint {
+    position: absolute;
+    right: 14px;
+    bottom: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #a5b4fc;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    pointer-events: none;
+}
+
+.document-page__card:hover .document-page__card-hint,
+.document-page__card:focus-visible .document-page__card-hint {
+    opacity: 1;
+}
+
+.document-page__card--active {
+    border-color: rgba(129, 140, 248, 0.45);
+    box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.2);
+}
+
+.document-page__card-title {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    font-weight: 700;
+    font-size: 15px;
+    color: #f1f5f9;
+    word-break: break-all;
+    flex-wrap: wrap;
+}
+
+.document-page__card-title-text {
+    flex: 1;
+    min-width: 0;
+}
+
+.document-page__doc-type-badge {
+    flex-shrink: 0;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 6px;
+    background: rgba(99, 102, 241, 0.2);
+    border: 1px solid rgba(129, 140, 248, 0.35);
+    color: #c4b5fd;
+}
+
+.document-page__card-keywords {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.document-page__keyword {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 6px;
+    background: rgba(59, 130, 246, 0.12);
+    border: 1px solid rgba(59, 130, 246, 0.28);
+    color: #93c5fd;
+}
+
+.document-page__card-summary {
+    font-size: 12px;
+    line-height: 1.45;
+    color: #cbd5e1;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.document-page__card-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.document-page__tag {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(16, 185, 129, 0.12);
+    border: 1px solid rgba(16, 185, 129, 0.25);
+    color: #a7f3d0;
+}
+
+.document-page__skeleton {
+    border-radius: 14px;
+    height: 140px;
+    background: linear-gradient(90deg, rgba(30, 41, 59, 0.6) 25%, rgba(51, 65, 85, 0.35) 50%, rgba(30, 41, 59, 0.6) 75%);
+    background-size: 200% 100%;
+    animation: document-shimmer 1.2s ease-in-out infinite;
+}
+
+@keyframes document-shimmer {
+    0% {
+        background-position: 200% 0;
+    }
+    100% {
+        background-position: -200% 0;
+    }
+}
+
+.document-page__empty,
+.document-page__error {
+    padding: 28px;
+    border-radius: 14px;
+    text-align: center;
+    color: var(--dp-muted);
+    border: 1px dashed rgba(71, 85, 105, 0.5);
+    font-size: 14px;
+}
+
+.document-page__error {
+    color: #fca5a5;
+    border-color: rgba(248, 113, 113, 0.35);
+}

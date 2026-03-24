@@ -9,6 +9,9 @@ from api.routes.query_routes import router as query_router
 from api.routes.settings_routes import router as settings_router
 from api.routes.ingestion_routes import router as ingestion_router
 from api.routes.graph_routes import router as graph_router
+from api.routes.knowledge_hub_routes import router as knowledge_hub_router
+from api.routes.insight_routes import router as insight_router
+from api.routes.hybrid_search_routes import router as hybrid_search_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -31,6 +34,9 @@ app.include_router(query_router)
 app.include_router(settings_router)
 app.include_router(ingestion_router)
 app.include_router(graph_router)
+app.include_router(knowledge_hub_router)
+app.include_router(insight_router)
+app.include_router(hybrid_search_router)
 
 
 @app.get("/")

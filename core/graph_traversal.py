@@ -2,6 +2,10 @@ import logging
 from typing import Any, Dict, List
 
 from core.graph_engine import GraphEngine
+from core.kg_edge_filter import (
+    normalize_kg_rel_properties_for_api,
+    relation_passes_min_confidence,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -61,12 +65,14 @@ class GraphTraversalEngine:
             for r in path.relationships:
                 if len(edges) >= MAX_TRAVERSAL_EDGES:
                     break
+                if not relation_passes_min_confidence(dict(r)):
+                    continue
                 edges.append(
                     {
                         "source": r.start_node.id,
                         "target": r.end_node.id,
                         "type": r.type,
-                        "properties": dict(r),
+                        "properties": normalize_kg_rel_properties_for_api(dict(r)),
                     }
                 )
 

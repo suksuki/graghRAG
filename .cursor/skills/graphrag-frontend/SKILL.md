@@ -24,6 +24,7 @@ via the `/api` prefix in the frontend:
 - `/api/graph/subgraph?entity=<name>`
 - `/api/graph/path?a=<A>&b=<B>`
 - `/api/graph/node_documents?entity=<name>`
+- `/api/insights/corpus` (POST, Document Intelligence 聚合)
 
 The normalized response shape for graph data is:
 

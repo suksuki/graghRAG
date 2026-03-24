@@ -26,6 +26,9 @@ GraphEngine (Neo4j + extraction LLM)
 
 ## Module Responsibilities
 
+- **`core/document_intelligence.py`**
+  - LLM JSON extraction (summary, keywords, topics, entities, key_points, doc_type) for new vector files; results stored as `di_*` keys on chunk metadata.
+
 - **`core/ingestion.py`**
   - Orchestrates the full ingestion flow:
     - Scan `settings.DATA_RAW_DIR` for files.
@@ -34,7 +37,7 @@ GraphEngine (Neo4j + extraction LLM)
     - Write nodes to `VectorEngine` and `GraphEngine`.
   - **Must be idempotent**:
     - Re-running ingestion should not duplicate graph nodes or vectors for already-indexed files.
-    - Uses helpers like `GraphEngine.get_indexed_files()` and vector-store checks.
+    - Uses `GraphEngine.get_graph_ingest_state()` (file → `content_hash`) plus disk SHA256 for graph incremental; `get_indexed_files()` returns marked filenames only. Vector-store checks remain separate.
   - Must not contain any FastAPI routing or HTTP-specific logic.
 
 - **`core/vector_store.py` (VectorEngine)**

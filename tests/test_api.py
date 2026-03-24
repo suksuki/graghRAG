@@ -44,6 +44,41 @@ def test_api_ping(client):
     assert response.status_code == 200
     assert response.json()["status"] == "online"
 
+
+def test_hybrid_search_endpoint(client):
+    """POST /api/v1/hybrid-search 结构正确（无向量/图数据时也可 200）。"""
+    response = client.post(
+        "/api/v1/hybrid-search",
+        json={
+            "query": "integration test hybrid",
+            "top_k": 3,
+            "graph_expand_k": 10,
+            "include_fallback": False,
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data.get("query") == "integration test hybrid"
+    assert "results" in data
+    assert "debug" in data
+    assert "vector_hits" in data["debug"]
+    assert "graph_edges" in data["debug"]
+
+
+def test_corpus_insight_endpoint(client):
+    """POST /insights/corpus 返回结构正确（无元数据时也可 200）。"""
+    response = client.post("/insights/corpus", json={"top_k_docs": 5})
+    assert response.status_code == 200
+    data = response.json()
+    assert "summary" in data
+    assert "top_topics" in data
+    assert "top_entities" in data
+    assert "key_insights" in data
+    assert "closing_takeaway" in data
+    assert "top_keywords" in data
+    assert "docs_analyzed" in data
+    assert isinstance(data["key_insights"], list)
+
 @pytest.mark.integration
 def test_api_settings_test_endpoint(client):
     """Integration: /settings/test 需要真实 Ollama。"""

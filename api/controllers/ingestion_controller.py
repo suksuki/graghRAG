@@ -24,6 +24,7 @@ from api.utils import (
     ALLOWED_EXTENSIONS,
 )
 from api.deps import graph_engine, vector_engine, ingestor
+from core.kg_edge_filter import params_with_min_kg_conf
 from workers.celery_worker import ingest_document_task, _set_status, celery_app
 
 logger = logging.getLogger(__name__)
@@ -39,6 +40,62 @@ INGESTION_STATE = {
     "file_names": [],
     "pending": False,
 }
+
+
+def _eligible_raw_file_count() -> int:
+    """与知识库列表一致：可摄取扩展名的磁盘文件数。"""
+    base = settings.DATA_RAW_DIR
+    if not os.path.isdir(base):
+        return 0
+    n = 0
+    for fn in os.listdir(base):
+        path = os.path.join(base, fn)
+        if os.path.isfile(path) and is_allowed_extension(fn):
+            n += 1
+    return n
+
+
+def _vector_chunk_row_count() -> int:
+    """当前向量表行数；-1 表示查询失败（健康判断时不据此判失败）。"""
+    try:
+        from sqlalchemy import text
+
+        q = text(f"SELECT COUNT(*) AS c FROM {vector_engine.full_table_name}")
+        with vector_engine.vector_store._engine.connect() as conn:
+            row = conn.execute(q).fetchone()
+            return int(row[0] if row and row[0] is not None else 0)
+    except Exception as e:  # noqa: BLE001
+        logger.debug("vector chunk count failed: %s", e)
+        return -1
+
+
+def _compute_ingestion_health(
+    status: str,
+    updated_at: int | float | None,
+    eligible_files: int,
+    vector_rows: int,
+    *,
+    vector_known: bool = True,
+) -> str:
+    """
+    ok | processing | stalled | failed
+    stalled：processing 且 Redis 心跳超过约 60s 未更新（尚未触发硬超时转 failed）。
+    """
+    now = int(time.time())
+    if status in ("unknown", "failed"):
+        return "failed"
+    if status == "processing":
+        age: int | None = None
+        if isinstance(updated_at, (int, float)):
+            age = now - int(updated_at)
+        stale_hard = max(180, int(getattr(settings, "EXTRACTION_TIMEOUT", 120)) * 3)
+        if age is not None and age > 60 and age <= stale_hard:
+            return "stalled"
+        return "processing"
+    # idle
+    if vector_known and eligible_files > 0 and vector_rows == 0:
+        return "failed"
+    return "ok"
 
 
 def progress_callback(
@@ -59,6 +116,49 @@ def progress_callback(
         INGESTION_STATE["files_in_batch"] = files_in_batch
     if file_names is not None:
         INGESTION_STATE["file_names"] = file_names
+
+
+def _run_ingestion_sync_fallback(saved_files: List[str]) -> None:
+    """
+    Celery / Redis 不可用时，在 API 进程内同步跑摄取（单机开发最常见）。
+    与 workers/celery_worker.ingest_document_task 成功路径对齐：ingest_data + 可选 bump graph version。
+    """
+    INGESTION_STATE["is_processing"] = True
+    progress_callback(
+        "Inline ingestion (no Celery worker)…",
+        0,
+        graph_done=0,
+        graph_total=0,
+        files_in_batch=len(saved_files),
+        file_names=list(saved_files),
+    )
+    try:
+        ingestor.ingest_data(directory_path=settings.DATA_RAW_DIR, progress_callback=progress_callback)
+        try:
+            from core.query_cache import QueryCache
+
+            _qc = QueryCache(url=settings.REDIS_URL)
+            _qc.bump_graph_version()
+        except Exception as e:  # noqa: BLE001
+            logger.debug("graph version bump skipped after inline ingest: %s", e)
+        for fname in saved_files:
+            try:
+                _set_status(fname, "done")
+            except Exception as e:  # noqa: BLE001
+                logger.debug("Redis file status (done) skipped for %s: %s", fname, e)
+        progress_callback("Ingestion completed.", 100, graph_done=0, graph_total=0, files_in_batch=0, file_names=[])
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Inline ingestion failed: %s", e)
+        for fname in saved_files:
+            try:
+                _set_status(fname, "failed")
+            except Exception as e2:  # noqa: BLE001
+                logger.debug("Redis file status (failed) skipped for %s: %s", fname, e2)
+        progress_callback(f"Error: {e}", 0, files_in_batch=0, file_names=[])
+        raise
+    finally:
+        INGESTION_STATE["is_processing"] = False
+
 
 def handle_upload(files) -> Dict[str, Any]:
     """处理文件上传逻辑，不抛 HTTPException。
@@ -122,9 +222,7 @@ def handle_upload(files) -> Dict[str, Any]:
                 buffer.write(chunk)
         saved_files.append(safe_name)
 
-    # 使用 Celery 异步队列，每个文件一个任务，并写入 Redis 状态为 queued。
-    # 如果 Celery / Redis 不可用（例如测试环境未启动 Redis），则静默降级为仅保存文件，
-    # 由外部显式调用 ingestor.ingest_data() 完成同步摄取。
+    # 优先 Celery；若 broker/worker 不可用则在本进程同步摄取，避免「只落盘、不入库」。
     jobs: List[Dict[str, str]] = []
     for fname in saved_files:
         try:
@@ -134,6 +232,40 @@ def handle_upload(files) -> Dict[str, Any]:
             jobs.append({"file": fname, "job_id": task.id, "status": "queued"})
         except Exception as e:  # noqa: BLE001
             logger.warning("Failed to enqueue Celery task for %s: %s", fname, e)
+            jobs.clear()
+            break
+
+    use_inline = len(jobs) != len(saved_files)
+    if use_inline and saved_files:
+        logger.info(
+            "Celery enqueue unavailable or incomplete; running synchronous ingestion for %d file(s)",
+            len(saved_files),
+        )
+        try:
+            _run_ingestion_sync_fallback(saved_files)
+        except Exception as e:  # noqa: BLE001
+            raise AppError(
+                code=ErrorCode.UNKNOWN_ERROR,
+                message="文件已保存，但摄取失败",
+                detail=str(e),
+                suggestion="请检查 Ollama / PGVector / Neo4j 是否可用，并查看服务端日志",
+                status_code=500,
+            ) from e
+        if len(saved_files) == 1:
+            return {
+                "status": "completed",
+                "filename": saved_files[0],
+                "files": saved_files,
+                "jobs": [],
+                "ingestion_mode": "inline",
+            }
+        return {
+            "status": "completed",
+            "filename": saved_files,
+            "files": saved_files,
+            "jobs": [],
+            "ingestion_mode": "inline",
+        }
 
     if len(saved_files) == 1:
         return {"status": "queued", "filename": saved_files[0], "files": saved_files, "jobs": jobs}
@@ -241,9 +373,13 @@ def list_documents_controller() -> List[Dict[str, Any]]:
 def get_graph_data_controller() -> Dict[str, Any]:
     """从 Neo4j 抓取一小部分子图用于前端可视化。"""
     try:
-        query = "MATCH (n)-[r]->(m) RETURN n, r, m LIMIT 100"
+        query = """
+        MATCH (n)-[r]->(m)
+        WHERE ($min_kg_conf <= 0 OR coalesce(r.kg_confidence, 1.0) >= $min_kg_conf)
+        RETURN n, r, m LIMIT 100
+        """
         with graph_engine.graph_store._driver.session() as session:
-            result = session.run(query)
+            result = session.run(query, **params_with_min_kg_conf({}))
             nodes: Dict[str, Dict[str, Any]] = {}
             edges: List[Dict[str, Any]] = []
             for record in result:
@@ -270,16 +406,35 @@ def get_graph_data_controller() -> Dict[str, Any]:
 
 def get_ingestion_status_controller() -> Dict[str, Any]:
     try:
-        if not os.path.exists(settings.DATA_RAW_DIR):
-            return {"status": "idle", "progress": 0}
+        eligible_files = _eligible_raw_file_count()
+        vector_rows = _vector_chunk_row_count()
 
-        # 基础统计：文件数与图节点数
+        if not os.path.exists(settings.DATA_RAW_DIR):
+            vk = vector_rows >= 0
+            vr = vector_rows if vk else 0
+            h = _compute_ingestion_health("idle", None, eligible_files, vr, vector_known=vk)
+            return {
+                "status": "idle",
+                "progress": 0,
+                "health": h,
+                "eligible_file_count": eligible_files,
+                "vector_chunk_count": vector_rows if vk else None,
+                "file_count": 0,
+                "node_count": 0,
+                "message": "",
+                "graph_done": 0,
+                "graph_total": 0,
+                "files_in_batch": 0,
+                "file_names": [],
+            }
+
+        # 基础统计：目录项数量与图节点数
         file_count = len(os.listdir(settings.DATA_RAW_DIR))
         with graph_engine.graph_store._driver.session() as session:
             count = session.run("MATCH (n) RETURN count(n) as c").single()["c"]
 
         # 默认回退到本地 INGESTION_STATE（主要用于无 Redis / 无 Celery 的场景）
-        base = {
+        base: Dict[str, Any] = {
             "status": "processing" if INGESTION_STATE.get("is_processing") else "idle",
             "message": INGESTION_STATE.get("status", "idle"),
             "progress": INGESTION_STATE.get("progress", 0),
@@ -312,9 +467,20 @@ def get_ingestion_status_controller() -> Dict[str, Any]:
 
         base["node_count"] = count
         base["file_count"] = file_count
+        base["eligible_file_count"] = eligible_files
+        vk = vector_rows >= 0
+        base["vector_chunk_count"] = vector_rows if vk else None
+        vr = vector_rows if vk else 0
+        base["health"] = _compute_ingestion_health(
+            str(base.get("status") or "idle"),
+            updated_at if isinstance(updated_at, (int, float)) else None,
+            eligible_files,
+            vr,
+            vector_known=vk,
+        )
         return base
     except Exception:  # noqa: BLE001
-        return {"status": "unknown"}
+        return {"status": "unknown", "health": "failed"}
 
 
 def delete_document_controller(filename: str) -> Dict[str, Any]:

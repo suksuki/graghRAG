@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 
 from api.controllers.graph_controller import (
     list_nodes_controller,
@@ -9,6 +9,7 @@ from api.controllers.graph_controller import (
     graph_overview_controller,
     suggested_questions_controller,
     entity_suggestions_controller,
+    document_suggestions_controller,
     entity_types_controller,
     list_entities_controller,
 )
@@ -88,11 +89,16 @@ def suggested_questions(request: Request, limit: int = Query(10, ge=1, le=50)):
 @router.get("/suggestions")
 def entity_suggestions(
     request: Request,
-    entity: str = Query(...),
+    entity: str | None = Query(None, description="中心实体名称"),
+    doc_id: str | None = Query(None, description="文档文件名（与 metadata file_name 一致）"),
     limit: int = Query(5, ge=1, le=20),
 ):
     lang = (request.headers.get("x-lang") or "zh").strip().lower()
-    return entity_suggestions_controller(entity=entity, limit=limit, lang=lang)
+    if not entity and not doc_id:
+        raise HTTPException(status_code=400, detail="请提供 entity 或 doc_id")
+    if doc_id and not entity:
+        return document_suggestions_controller(doc_id=doc_id, limit=limit, lang=lang)
+    return entity_suggestions_controller(entity=entity or "", limit=limit, lang=lang)
 
 
 @router.get("/entities")

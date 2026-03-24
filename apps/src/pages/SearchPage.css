@@ -1,0 +1,304 @@
+/* Search 页：暗色底 + 紫强调，贴近设计稿 */
+.search-page {
+    --search-bg: #0b0e14;
+    --search-card: rgba(15, 23, 42, 0.72);
+    --search-border: rgba(99, 102, 241, 0.22);
+    --search-accent: #a5b4fc;
+    --search-highlight: #c4b5fd;
+    --search-muted: #94a3b8;
+    min-height: 100%;
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 20px 20px 32px;
+}
+
+.search-page__kicker {
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--search-muted);
+    margin-bottom: 10px;
+}
+
+.search-page__form {
+    display: flex;
+    gap: 10px;
+    align-items: stretch;
+    margin-bottom: 20px;
+    padding: 6px 8px 6px 14px;
+    border-radius: 12px;
+    background: var(--search-card);
+    border: 1px solid var(--search-border);
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
+}
+
+.search-page__form:focus-within {
+    border-color: rgba(129, 140, 248, 0.45);
+    box-shadow: 0 0 0 1px rgba(129, 140, 248, 0.2);
+}
+
+.search-page__input-wrap {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+.search-page__input-wrap svg {
+    flex-shrink: 0;
+    opacity: 0.65;
+    color: var(--search-accent);
+}
+
+.search-page__input {
+    flex: 1;
+    min-width: 0;
+    border: none;
+    background: transparent;
+    color: #f1f5f9;
+    font-size: 15px;
+    outline: none;
+    padding: 12px 4px;
+}
+
+.search-page__input::placeholder {
+    color: rgba(148, 163, 184, 0.75);
+}
+
+.search-page__submit {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 20px;
+    border-radius: 10px;
+    border: none;
+    background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+    color: #fff;
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+    transition: opacity 0.2s, transform 0.15s;
+}
+
+.search-page__submit:hover:not(:disabled) {
+    opacity: 0.95;
+    transform: translateY(-1px);
+}
+
+.search-page__submit:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+.search-page__results-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+    gap: 12px;
+}
+
+.search-page__results-title {
+    font-size: 12px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--search-muted);
+    font-weight: 600;
+}
+
+.search-page__sort {
+    font-size: 12px;
+    color: var(--search-muted);
+}
+
+.search-page__list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.search-page__card {
+    text-align: left;
+    width: 100%;
+    padding: 18px 20px;
+    border-radius: 14px;
+    background: var(--search-card);
+    border: 1px solid rgba(51, 65, 85, 0.5);
+    cursor: pointer;
+    transition: border-color 0.2s, box-shadow 0.2s, transform 0.18s ease;
+    color: inherit;
+    font: inherit;
+}
+
+.search-page__card:hover {
+    border-color: rgba(129, 140, 248, 0.35);
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.2);
+    transform: scale(1.01);
+}
+
+.search-page__card:active {
+    transform: scale(0.998);
+}
+
+.search-page__card-title {
+    font-size: 17px;
+    font-weight: 700;
+    color: #f8fafc;
+    margin-bottom: 6px;
+    line-height: 1.35;
+    word-break: break-all;
+}
+
+.search-page__card-meta {
+    font-size: 12px;
+    line-height: 1.4;
+    color: #94a3b8;
+    margin-bottom: 8px;
+    letter-spacing: 0.02em;
+}
+
+.search-page__card-snippet {
+    font-size: 14px;
+    line-height: 1.55;
+    color: #cbd5e1;
+    display: -webkit-box;
+    -webkit-line-clamp: 4;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.search-page__highlight {
+    color: var(--search-highlight);
+    font-weight: 600;
+    background: rgba(99, 102, 241, 0.15);
+    border-radius: 2px;
+    padding: 0 2px;
+}
+
+.search-page__empty,
+.search-page__error {
+    padding: 20px;
+    border-radius: 12px;
+    background: rgba(15, 23, 42, 0.5);
+    border: 1px dashed rgba(71, 85, 105, 0.6);
+    color: var(--search-muted);
+    font-size: 14px;
+    text-align: center;
+}
+
+.search-page__error {
+    border-color: rgba(248, 113, 113, 0.35);
+    color: #fca5a5;
+}
+
+/* 加载：结果卡片骨架 */
+.search-page__skeleton-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.search-page__skeleton-card {
+    padding: 18px 20px;
+    border-radius: 14px;
+    background: var(--search-card);
+    border: 1px solid rgba(51, 65, 85, 0.45);
+    overflow: hidden;
+}
+
+.search-page__skeleton-line {
+    height: 12px;
+    border-radius: 6px;
+    background: linear-gradient(
+        90deg,
+        rgba(51, 65, 85, 0.35) 0%,
+        rgba(71, 85, 105, 0.55) 50%,
+        rgba(51, 65, 85, 0.35) 100%
+    );
+    background-size: 200% 100%;
+    animation: search-skel-shimmer 1.2s ease-in-out infinite;
+    margin-bottom: 10px;
+}
+
+.search-page__skeleton-line:last-child {
+    margin-bottom: 0;
+}
+
+.search-page__skeleton-line--title {
+    height: 18px;
+    width: 58%;
+    margin-bottom: 12px;
+}
+
+.search-page__skeleton-line--meta {
+    width: 42%;
+    height: 10px;
+    margin-bottom: 14px;
+}
+
+.search-page__skeleton-line--short {
+    width: 72%;
+}
+
+@keyframes search-skel-shimmer {
+    0% {
+        background-position: 100% 0;
+    }
+    100% {
+        background-position: -100% 0;
+    }
+}
+
+/* 空结果：可行动说明 */
+.search-page__empty--rich {
+    text-align: left;
+    max-width: 520px;
+    margin: 0 auto;
+}
+
+.search-page__empty-title {
+    margin: 0 0 10px;
+    font-size: 16px;
+    font-weight: 700;
+    color: #e2e8f0;
+}
+
+.search-page__empty-lead {
+    margin: 0 0 8px;
+    font-size: 13px;
+    color: var(--search-muted);
+}
+
+.search-page__empty-tips {
+    margin: 0 0 16px;
+    padding-left: 18px;
+    font-size: 13px;
+    line-height: 1.55;
+    color: #cbd5e1;
+}
+
+.search-page__empty-tips li {
+    margin-bottom: 4px;
+}
+
+.search-page__empty-cta {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 16px;
+    border-radius: 10px;
+    border: 1px solid rgba(129, 140, 248, 0.45);
+    background: rgba(99, 102, 241, 0.2);
+    color: #e0e7ff;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.search-page__empty-cta:hover {
+    background: rgba(99, 102, 241, 0.32);
+    border-color: rgba(167, 139, 250, 0.55);
+}

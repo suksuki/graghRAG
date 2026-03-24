@@ -1,7 +1,13 @@
 import logging
+import os
 from typing import Any, Dict, List
 
 from api.deps import graph_engine
+from core.kg_edge_filter import (
+    normalize_kg_rel_properties_for_api,
+    params_with_min_kg_conf,
+    relation_passes_min_confidence,
+)
 from core.lang_detect import detect_lang, normalize_lang
 from core.query_cache import QueryCache, GRAPH_VERSION
 from core.entity_normalization import normalize_entity
@@ -221,6 +227,7 @@ def list_relations_controller(limit: int = 100) -> Dict[str, List[Dict[str, Any]
     """
     cypher = """
     MATCH (n)-[r]->(m)
+    WHERE ($min_kg_conf <= 0 OR coalesce(r.kg_confidence, 1.0) >= $min_kg_conf)
     RETURN
       id(n) AS source_id,
       labels(n) AS source_labels,
@@ -232,7 +239,7 @@ def list_relations_controller(limit: int = 100) -> Dict[str, List[Dict[str, Any]
       properties(r) AS rel_props
     LIMIT $limit
     """
-    records = _run_cypher(cypher, {"limit": limit})
+    records = _run_cypher(cypher, params_with_min_kg_conf({"limit": limit}))
 
     nodes: Dict[Any, Dict[str, Any]] = {}
     edges: List[Dict[str, Any]] = []
@@ -257,7 +264,9 @@ def list_relations_controller(limit: int = 100) -> Dict[str, List[Dict[str, Any]
                 "source": sid,
                 "target": tid,
                 "type": rec.get("type"),
-                "properties": rec.get("rel_props", {}),
+                "properties": normalize_kg_rel_properties_for_api(
+                    rec.get("rel_props", {})
+                ),
             }
         )
 
@@ -334,10 +343,11 @@ def suggested_questions_controller(limit: int = 10, lang: str = "zh") -> Dict[st
     cypher = """
     MATCH (a)-[r]->(b)
     WHERE exists(a.name) AND exists(b.name)
+      AND ($min_kg_conf <= 0 OR coalesce(r.kg_confidence, 1.0) >= $min_kg_conf)
     RETURN a.name AS a_name, type(r) AS rel, b.name AS b_name
     LIMIT $limit
     """
-    records = _run_cypher(cypher, {"limit": limit})
+    records = _run_cypher(cypher, params_with_min_kg_conf({"limit": limit}))
 
     questions: List[str] = []
     lang_bucket = _lang_bucket(lang)
@@ -382,20 +392,24 @@ def entity_suggestions_controller(entity: str, limit: int = 5, lang: str = "zh")
     cypher = """
     MATCH (a:Entity {name: $entity})
     MATCH (a)-[r]->(b:Entity)
+    WHERE ($min_kg_conf <= 0 OR coalesce(r.kg_confidence, 1.0) >= $min_kg_conf)
     RETURN type(r) AS rel, b.name AS name
     LIMIT $limit
     """
-    records = _run_cypher(cypher, {"entity": canonical, "limit": limit})
+    records = _run_cypher(
+        cypher, params_with_min_kg_conf({"entity": canonical, "limit": limit})
+    )
     if not records:
         records = _run_cypher(
             """
             MATCH (a:Entity)
             WHERE toLower(a.name) CONTAINS toLower($entity)
             MATCH (a)-[r]->(b:Entity)
+            WHERE ($min_kg_conf <= 0 OR coalesce(r.kg_confidence, 1.0) >= $min_kg_conf)
             RETURN type(r) AS rel, b.name AS name
             LIMIT $limit
             """,
-            {"entity": canonical, "limit": limit},
+            params_with_min_kg_conf({"entity": canonical, "limit": limit}),
         )
 
     relations: List[Dict[str, str]] = []
@@ -519,6 +533,74 @@ def entity_suggestions_controller(entity: str, limit: int = 5, lang: str = "zh")
     return payload
 
 
+def document_suggestions_controller(doc_id: str, limit: int = 5, lang: str = "zh") -> Dict[str, Any]:
+    """
+    基于文档（file_name）关联的图谱实体生成推荐问题；无实体时用语义模板兜底。
+    """
+    fn = (doc_id or "").strip()
+    if not fn:
+        return {
+            "doc_id": "",
+            "entity": "",
+            "canonical": "",
+            "resolved": "",
+            "relations": [],
+            "questions": [],
+            "seed_entity": None,
+        }
+
+    norm_fn = normalize_entity(fn)
+    lang_bucket = _lang_bucket(lang)
+    lang_key = (lang or "zh").strip().lower()
+    cache_key = f"graph:suggestions:doc:{norm_fn}|{lang_key}|{GRAPH_VERSION}"
+    if _graph_cache is not None:
+        cached = _graph_cache.get(cache_key)
+        if isinstance(cached, dict) and _questions_match_lang(cached.get("questions") or [], lang_bucket):
+            return cached
+
+    cypher = """
+    MATCH (n) WHERE n.file_name = $fn
+    MATCH path = (n)-[*1..5]-(e:Entity)
+    RETURN DISTINCT e.name AS name
+    ORDER BY name
+    LIMIT 15
+    """
+    rows = _run_cypher(cypher, {"fn": fn})
+    names: List[str] = []
+    for r in rows:
+        nm = r.get("name")
+        if isinstance(nm, str) and nm.strip():
+            names.append(nm.strip())
+    primary = names[0] if names else None
+
+    if primary:
+        inner = entity_suggestions_controller(primary, limit=limit, lang=lang)
+        payload = {
+            **inner,
+            "doc_id": fn,
+            "seed_entity": primary,
+        }
+    else:
+        stem = os.path.splitext(fn)[0] or fn
+        qs = _fallback_questions(stem, lang_bucket, products=[], domains=[])
+        payload = {
+            "doc_id": fn,
+            "entity": stem,
+            "canonical": stem,
+            "resolved": stem,
+            "relations": [],
+            "questions": qs,
+            "seed_entity": None,
+        }
+
+    if _graph_cache is not None:
+        try:
+            _graph_cache.set(cache_key, payload, ttl=_GRAPH_TTL)
+        except Exception:  # noqa: BLE001
+            pass
+    return payload
+
+
 def list_entities_controller(entity_type: str, page: int = 1, size: int = 20) -> Dict[str, Any]:
     """
     分页返回指定类型下的实体名称列表，用于 Entity Browser。
@@ -569,6 +651,7 @@ def subgraph_by_entity_controller(entity: str, limit: int = 200) -> Dict[str, Li
     """
     cypher = """
     MATCH (n {name: $name})-[r]-(m)
+    WHERE ($min_kg_conf <= 0 OR coalesce(r.kg_confidence, 1.0) >= $min_kg_conf)
     RETURN
       id(n) AS center_id,
       labels(n) AS center_labels,
@@ -580,7 +663,9 @@ def subgraph_by_entity_controller(entity: str, limit: int = 200) -> Dict[str, Li
       properties(r) AS rel_props
     LIMIT $limit
     """
-    records = _run_cypher(cypher, {"name": entity, "limit": limit})
+    records = _run_cypher(
+        cypher, params_with_min_kg_conf({"name": entity, "limit": limit})
+    )
 
     if not records:
         return {"nodes": [], "edges": []}
@@ -608,7 +693,9 @@ def subgraph_by_entity_controller(entity: str, limit: int = 200) -> Dict[str, Li
                 "source": cid,
                 "target": nid,
                 "type": rec.get("type"),
-                "properties": rec.get("rel_props", {}),
+                "properties": normalize_kg_rel_properties_for_api(
+                    rec.get("rel_props", {})
+                ),
             }
         )
 
@@ -643,12 +730,14 @@ def path_between_entities_controller(a: str, b: str, max_hops: int = 4) -> Dict[
                     "properties": dict(n),
                 }
         for r in path.relationships:
+            if not relation_passes_min_confidence(dict(r)):
+                continue
             edges.append(
                 {
                     "source": r.start_node.id,
                     "target": r.end_node.id,
                     "type": r.type,
-                    "properties": dict(r),
+                    "properties": normalize_kg_rel_properties_for_api(dict(r)),
                 }
             )
 
@@ -662,10 +751,13 @@ def node_documents_controller(entity: str, limit: int = 10) -> Dict[str, List[Di
     """
     cypher = """
     MATCH (d:Document)-[r]->(e {name: $name})
+    WHERE ($min_kg_conf <= 0 OR coalesce(r.kg_confidence, 1.0) >= $min_kg_conf)
     RETURN d
     LIMIT $limit
     """
-    records = _run_cypher(cypher, {"name": entity, "limit": limit})
+    records = _run_cypher(
+        cypher, params_with_min_kg_conf({"name": entity, "limit": limit})
+    )
     docs: List[Dict[str, Any]] = []
     for rec in records:
         d = rec["d"]
