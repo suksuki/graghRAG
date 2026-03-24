@@ -1,0 +1,493 @@
+/* 有据摘要 + 来源面板：与 Search / Document 暗色主题一致，可上线形态 */
+
+/* 仅 import.meta.env.DEV + 传入 apiDebug 时渲染 */
+.grounded-insight__dev-debug {
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px dashed rgba(100, 116, 139, 0.55);
+}
+
+.grounded-insight__dev-debug-summary {
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #64748b;
+    list-style: none;
+}
+
+.grounded-insight__dev-debug-summary::-webkit-details-marker {
+    display: none;
+}
+
+.grounded-insight__dev-debug-human {
+    margin: 10px 0 12px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: rgba(30, 58, 138, 0.12);
+    border: 1px solid rgba(96, 165, 250, 0.22);
+}
+
+.grounded-insight__dev-debug-human-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #93c5fd;
+    margin-bottom: 8px;
+}
+
+.grounded-insight__dev-debug-human-list {
+    margin: 0;
+    padding-left: 1.15em;
+    font-size: 12px;
+    line-height: 1.55;
+    color: #cbd5e1;
+}
+
+.grounded-insight__dev-debug-human-list li {
+    margin-bottom: 4px;
+}
+
+.grounded-insight__dev-debug-human-list li:last-child {
+    margin-bottom: 0;
+}
+
+.grounded-insight__dev-debug-pre {
+    margin: 8px 0 0;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.9);
+    border: 1px solid rgba(51, 65, 85, 0.7);
+    font-size: 11px;
+    line-height: 1.45;
+    color: #94a3b8;
+    overflow: auto;
+    max-height: 220px;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.grounded-insight {
+    --grounded-accent: #2563eb;
+    --grounded-accent-soft: rgba(37, 99, 235, 0.35);
+    --grounded-surface: rgba(15, 23, 42, 0.75);
+    --grounded-border: rgba(99, 102, 241, 0.22);
+    --grounded-muted: #94a3b8;
+    position: relative;
+    border-radius: 14px;
+    border: 1px solid var(--grounded-border);
+    background: var(--grounded-surface);
+    padding: 18px 18px 20px;
+    box-shadow: 0 4px 28px rgba(0, 0, 0, 0.22);
+}
+
+.grounded-insight__badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--grounded-muted);
+    margin-bottom: 12px;
+}
+
+.grounded-insight__badge--warn {
+    color: #fbbf24;
+}
+
+.grounded-insight__summary-wrap {
+    margin-bottom: 12px;
+    border-radius: 10px;
+    transition: box-shadow 0.22s ease-out;
+}
+
+.grounded-insight__summary-wrap--enter {
+    animation: grounded-summary-enter 0.22s ease-out;
+}
+
+@keyframes grounded-summary-enter {
+    from {
+        opacity: 0.5;
+        box-shadow: 0 0 0 0 rgba(37, 99, 235, 0);
+    }
+
+    35% {
+        box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.45), 0 0 20px rgba(37, 99, 235, 0.12);
+    }
+
+    to {
+        opacity: 1;
+        box-shadow: 0 0 0 0 rgba(37, 99, 235, 0);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .grounded-insight__summary-wrap--enter {
+        animation: none;
+        opacity: 1;
+    }
+}
+
+.grounded-insight__summary {
+    font-size: 15px;
+    line-height: 1.65;
+    color: #e2e8f0;
+    word-break: break-word;
+}
+
+.grounded-insight__structured {
+    font-size: 15px;
+    line-height: 1.65;
+    color: #e2e8f0;
+    word-break: break-word;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.grounded-insight__section {
+    margin: 0;
+}
+
+.grounded-insight__section-title {
+    margin: 0 0 8px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #cbd5e1;
+    font-family: var(--font-main, system-ui, sans-serif);
+}
+
+.grounded-insight__bullet-list {
+    margin: 0;
+    padding-left: 1.15em;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.grounded-insight__bullet {
+    margin: 0;
+    padding-left: 0.15em;
+    color: #e2e8f0;
+}
+
+.grounded-insight__below-summary {
+    margin-bottom: 16px;
+}
+
+.grounded-insight__ref {
+    display: inline;
+    padding: 0 2px;
+    margin: 0 1px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    font: inherit;
+    color: var(--grounded-accent);
+    cursor: pointer;
+    text-decoration: none;
+    vertical-align: baseline;
+}
+
+.grounded-insight__ref:hover,
+.grounded-insight__ref:focus-visible {
+    text-decoration: underline;
+    outline: none;
+    background: rgba(37, 99, 235, 0.12);
+}
+
+.grounded-insight__ref--active {
+    background: rgba(37, 99, 235, 0.2);
+    border-radius: 4px;
+}
+
+.grounded-insight__ref--missing {
+    color: #64748b;
+    cursor: help;
+    text-decoration: dotted underline;
+}
+
+.grounded-insight__grid-head {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px 16px;
+    margin-bottom: 10px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--grounded-muted);
+    border-bottom: 1px solid rgba(51, 65, 85, 0.5);
+    padding-bottom: 8px;
+}
+
+.grounded-insight__grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px 16px;
+    align-items: start;
+}
+
+@media (max-width: 720px) {
+    .grounded-insight__grid-head,
+    .grounded-insight__grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.grounded-insight__sources {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+    max-height: 320px;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.grounded-insight__source {
+    text-align: left;
+    border: 1px solid rgba(51, 65, 85, 0.45);
+    border-radius: 10px;
+    padding: 0;
+    background: rgba(30, 41, 59, 0.45);
+    transition: border-color 0.15s ease, background 0.15s ease;
+    overflow: hidden;
+}
+
+.grounded-insight__source:hover {
+    border-color: rgba(129, 140, 248, 0.35);
+}
+
+.grounded-insight__source-main {
+    display: block;
+    width: 100%;
+    text-align: left;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    padding: 10px 12px;
+    color: inherit;
+    font: inherit;
+}
+
+.grounded-insight__source-main:hover {
+    background: rgba(51, 65, 85, 0.25);
+}
+
+.grounded-insight__source-jump {
+    display: block;
+    width: 100%;
+    border: none;
+    border-top: 1px solid rgba(51, 65, 85, 0.5);
+    background: rgba(15, 23, 42, 0.4);
+    color: var(--grounded-accent);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 8px 12px;
+    cursor: pointer;
+    text-align: center;
+}
+
+.grounded-insight__source-jump:hover {
+    background: rgba(37, 99, 235, 0.12);
+}
+
+.grounded-insight__source--active {
+    background: #1e293b;
+    border-left: 3px solid var(--grounded-accent);
+    padding-left: 9px;
+    border-color: var(--grounded-accent-soft);
+}
+
+.grounded-insight__source--pulse {
+    animation: grounded-evidence-pulse 0.85s ease-out;
+}
+
+.grounded-insight__preview--pulse {
+    animation: grounded-evidence-pulse-border 0.85s ease-out;
+}
+
+.grounded-insight__preview-body--pulse {
+    animation: grounded-evidence-text-glow 0.85s ease-out;
+}
+
+@keyframes grounded-evidence-pulse {
+    0% {
+        box-shadow: 0 0 0 0 rgba(96, 165, 250, 0);
+    }
+
+    35% {
+        box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.45), 0 0 18px rgba(37, 99, 235, 0.2);
+    }
+
+    100% {
+        box-shadow: 0 0 0 0 rgba(96, 165, 250, 0);
+    }
+}
+
+@keyframes grounded-evidence-pulse-border {
+    0% {
+        border-color: rgba(51, 65, 85, 0.45);
+    }
+
+    40% {
+        border-color: rgba(96, 165, 250, 0.75);
+    }
+
+    100% {
+        border-color: rgba(51, 65, 85, 0.45);
+    }
+}
+
+@keyframes grounded-evidence-text-glow {
+    0% {
+        background: transparent;
+    }
+
+    45% {
+        background: rgba(37, 99, 235, 0.14);
+    }
+
+    100% {
+        background: transparent;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .grounded-insight__source--pulse,
+    .grounded-insight__preview--pulse,
+    .grounded-insight__preview-body--pulse {
+        animation: none;
+    }
+}
+
+.grounded-insight__source-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: #cbd5e1;
+    margin-bottom: 4px;
+}
+
+.grounded-insight__source-meta {
+    font-size: 11px;
+    color: var(--grounded-muted);
+    margin-bottom: 6px;
+}
+
+.grounded-insight__source-snippet {
+    font-size: 12px;
+    line-height: 1.5;
+    color: #94a3b8;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.grounded-insight__source-score {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(51, 65, 85, 0.45);
+    font-size: 11px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: #7dd3fc;
+    letter-spacing: 0.02em;
+}
+
+.grounded-insight__preview-score {
+    font-size: 11px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: #7dd3fc;
+    margin: -4px 0 8px;
+}
+
+.grounded-insight__tooltip-score {
+    font-size: 11px;
+    font-weight: 600;
+    color: #7dd3fc;
+    margin: 4px 0 6px;
+    font-variant-numeric: tabular-nums;
+}
+
+.grounded-insight__preview {
+    min-height: 120px;
+    border-radius: 10px;
+    border: 1px solid rgba(51, 65, 85, 0.45);
+    padding: 12px 14px;
+    background: rgba(15, 23, 42, 0.5);
+}
+
+.grounded-insight__preview-placeholder {
+    font-size: 13px;
+    color: var(--grounded-muted);
+    line-height: 1.5;
+}
+
+.grounded-insight__preview-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: #a5b4fc;
+    margin-bottom: 8px;
+    word-break: break-all;
+}
+
+.grounded-insight__preview-body {
+    font-size: 13px;
+    line-height: 1.6;
+    color: #cbd5e1;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.grounded-insight__preview-jump {
+    margin-top: 12px;
+    padding: 8px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--grounded-accent-soft);
+    background: rgba(37, 99, 235, 0.12);
+    color: #93c5fd;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.grounded-insight__preview-jump:hover {
+    background: rgba(37, 99, 235, 0.22);
+}
+
+.grounded-insight__tooltip {
+    position: fixed;
+    z-index: 9999;
+    max-width: min(360px, calc(100vw - 24px));
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(99, 102, 241, 0.35);
+    background: rgba(15, 23, 42, 0.96);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+    pointer-events: none;
+}
+
+.grounded-insight__tooltip-file {
+    font-size: 12px;
+    font-weight: 600;
+    color: #a5b4fc;
+    margin-bottom: 6px;
+    word-break: break-all;
+}
+
+.grounded-insight__tooltip-snippet {
+    font-size: 12px;
+    line-height: 1.5;
+    color: #e2e8f0;
+    max-height: 140px;
+    overflow-y: auto;
+}

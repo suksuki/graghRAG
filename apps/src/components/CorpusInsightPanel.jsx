@@ -105,6 +105,19 @@ export default function CorpusInsightPanel({ variant = 'embedded', topKDocs = 20
                             : t('insight_trust_zero')}
                     </p>
 
+                    {n === 0 && (
+                        <div className="insight-panel__corpus-fallback" role="note">
+                            <p className="insight-panel__corpus-fallback-text">{t('insight_corpus_di_explain')}</p>
+                            <div className="insight-panel__corpus-fallback-actions">
+                                <Link to="/search" className="insight-panel__corpus-fallback-link">
+                                    {t('insight_corpus_try_grounded')}
+                                </Link>
+                                <span className="insight-panel__corpus-fallback-sep">·</span>
+                                <span className="insight-panel__corpus-fallback-tip">{t('insight_corpus_reingest_tip')}</span>
+                            </div>
+                        </div>
+                    )}
+
                     {(data.summary || '').trim() && (
                         <div className="insight-panel__summary-wrap">
                             <div className="insight-panel__summary-kicker">{t('insight_summary_kicker')}</div>

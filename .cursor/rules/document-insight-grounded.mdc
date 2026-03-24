@@ -1,0 +1,25 @@
+---
+description: 修改有据洞察（Insight API / UI）时遵循 grounded 契约 skill
+globs:
+  - core/document_insight_service.py
+  - api/controllers/document_insight_controller.py
+  - api/routes/document_insight_routes.py
+  - apps/src/components/GroundedInsightPanel.jsx
+  - apps/src/components/GroundedInsightPanel.css
+  - apps/src/components/GroundedFollowUpChips.jsx
+  - apps/src/components/GroundedFollowUpChips.css
+  - apps/src/utils/parseSummaryRefs.js
+  - apps/src/utils/parseStructuredGroundedSummary.js
+  - apps/src/hooks/useDocumentInsight.js
+  - apps/src/pages/InsightPage.jsx
+  - apps/src/pages/InsightPage.css
+  - apps/src/pages/SearchPage.jsx
+  - apps/src/pages/DocumentDetail.jsx
+---
+
+# Grounded Document Insight
+
+当编辑上述文件时，请先阅读并遵循项目 skill：`.cursor/skills/document-insight-grounded/SKILL.md`（摘要须 grounded、`[n]` 与 `ref_index` 对齐、图关系为辅助等）。
+
+- **不要**把 Skill 当作运行时强制或「覆盖代码」的依据；与实现冲突时以代码与 `api/schemas.py` 中 `DocumentInsight*` 为准，并同步更新 Skill 或代码（同一 PR 内闭环）。
+- **无需**在未触碰 Insight 流水线时读取该 Skill。

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
@@ -16,6 +16,9 @@ import {
     Tag,
 } from 'lucide-react';
 import { useDocumentDetail } from '../hooks/useDocumentDetail';
+import { useDocumentInsight } from '../hooks/useDocumentInsight';
+import GroundedInsightPanel from '../components/GroundedInsightPanel';
+import GroundedFollowUpChips from '../components/GroundedFollowUpChips';
 import './DocumentDetail.css';
 
 export default function DocumentDetail({
@@ -28,13 +31,116 @@ export default function DocumentDetail({
     const location = useLocation();
     const navigate = useNavigate();
     const returnTo = typeof location.state?.documentReturnTo === 'string' ? location.state.documentReturnTo : null;
+    const evidenceSnippetFromNav = location.state?.evidenceAnchor?.snippet;
+    const [evidenceFlashIdx, setEvidenceFlashIdx] = useState(null);
+    const evidenceHandledKeyRef = useRef(null);
     const { detail, suggestions, loading, error } = useDocumentDetail(docId);
+    const {
+        data: groundedData,
+        loading: groundedLoading,
+        error: groundedError,
+        run: runGroundedInsight,
+        reset: resetGroundedInsight,
+    } = useDocumentInsight();
+    const [groundedQuery, setGroundedQuery] = useState('');
     const [entitiesExpanded, setEntitiesExpanded] = useState(false);
     const entityPreview = 8;
+    const autoInsightDocRef = useRef(null);
 
     useEffect(() => {
         setEntitiesExpanded(false);
     }, [docId]);
+
+    useEffect(() => {
+        evidenceHandledKeyRef.current = null;
+        setEvidenceFlashIdx(null);
+    }, [docId]);
+
+    useEffect(() => {
+        autoInsightDocRef.current = null;
+        resetGroundedInsight();
+        setGroundedQuery('');
+    }, [docId, resetGroundedInsight]);
+
+    useEffect(() => {
+        if (!detail || !evidenceSnippetFromNav) return;
+        const key = `${docId}|${String(evidenceSnippetFromNav).slice(0, 64)}`;
+        if (evidenceHandledKeyRef.current === key) return;
+        evidenceHandledKeyRef.current = key;
+
+        const norm = (s) => String(s || '').replace(/\s+/g, ' ').trim();
+        const needle = norm(evidenceSnippetFromNav);
+        const head = needle.slice(0, Math.min(72, needle.length));
+        const snippets = detail.related_snippets || [];
+        let idx = -1;
+        if (head.length >= 8) {
+            snippets.forEach((s, i) => {
+                const h = norm(s);
+                if (!h) return;
+                if (h.includes(head) || head.includes(h.slice(0, Math.min(48, h.length)))) {
+                    idx = i;
+                }
+            });
+        }
+
+        setEvidenceFlashIdx(idx >= 0 ? idx : null);
+        requestAnimationFrame(() => {
+            if (idx >= 0) {
+                document.getElementById(`document-evidence-snippet-${idx}`)?.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'center',
+                });
+            } else {
+                document.getElementById('document-detail-related-knowledge')?.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'start',
+                });
+            }
+        });
+
+        const clearFlash = window.setTimeout(() => setEvidenceFlashIdx(null), 5200);
+
+        const nextState = { ...(location.state || {}) };
+        delete nextState.evidenceAnchor;
+        navigate(
+            { pathname: location.pathname, search: location.search, hash: location.hash || '' },
+            { replace: true, state: Object.keys(nextState).length ? nextState : undefined }
+        );
+
+        return () => clearTimeout(clearFlash);
+    }, [detail, docId, evidenceSnippetFromNav, navigate, location.hash, location.pathname, location.search]);
+
+    useEffect(() => {
+        if (!detail || !docId || loading) return;
+        if (autoInsightDocRef.current === docId) return;
+        autoInsightDocRef.current = docId;
+        runGroundedInsight({
+            query: t('grounded_insight_doc_default_query'),
+            docId,
+            topK: 8,
+        });
+    }, [detail, docId, loading, t, runGroundedInsight]);
+
+    const openDocument = useCallback(
+        (fn, meta) => {
+            if (!fn || fn === docId) return;
+            navigate(`/docs/${encodeURIComponent(fn)}`, {
+                state: {
+                    documentReturnTo: returnTo || undefined,
+                    evidenceAnchor:
+                        meta?.snippet && meta?.refIndex != null
+                            ? { refIndex: meta.refIndex, snippet: meta.snippet }
+                            : undefined,
+                },
+            });
+        },
+        [docId, navigate, returnTo]
+    );
+
+    const handleGroundedGenerate = () => {
+        const q = groundedQuery.trim() || t('grounded_insight_doc_default_query');
+        runGroundedInsight({ query: q, docId, topK: 8 });
+    };
 
     const handleBack = () => {
         if (returnTo && returnTo.startsWith('/')) {
@@ -94,6 +200,64 @@ export default function DocumentDetail({
                                 </span>
                             ) : null}
                         </h1>
+
+                        <section className="document-detail__panel document-detail__panel--grounded-insight document-detail__panel--grounded-first">
+                            <div className="document-detail__panel-title">
+                                <Quote size={16} aria-hidden />
+                                {t('grounded_insight_doc_section_title')}
+                            </div>
+                            <p className="document-detail__grounded-lead">{t('grounded_insight_doc_section_lead_auto')}</p>
+                            {groundedLoading && !groundedData ? (
+                                <div className="document-detail__grounded-loading" aria-busy="true" aria-label={t('grounded_insight_loading')}>
+                                    <Loader2 className="spin" size={22} aria-hidden />
+                                    <span>{t('grounded_insight_loading')}</span>
+                                </div>
+                            ) : null}
+                            <textarea
+                                className="document-detail__grounded-input"
+                                rows={2}
+                                value={groundedQuery}
+                                onChange={(e) => setGroundedQuery(e.target.value)}
+                                placeholder={t('grounded_insight_doc_query_placeholder')}
+                                aria-label={t('grounded_insight_doc_query_placeholder')}
+                            />
+                            <button
+                                type="button"
+                                className="document-detail__grounded-submit"
+                                disabled={groundedLoading}
+                                onClick={handleGroundedGenerate}
+                            >
+                                {groundedLoading ? <Loader2 className="spin" size={18} aria-hidden /> : null}
+                                {t('grounded_insight_regenerate')}
+                            </button>
+                            {groundedError ? (
+                                <div className="document-detail__error document-detail__grounded-error" role="alert">
+                                    {t('grounded_insight_error')}
+                                </div>
+                            ) : null}
+                            {groundedData ? (
+                                <div className="document-detail__grounded-panel-wrap">
+                                    <GroundedInsightPanel
+                                        summary={groundedData.summary || ''}
+                                        supportingChunks={groundedData.supporting_chunks || []}
+                                        insufficientEvidence={Boolean(groundedData.insufficient_evidence)}
+                                        apiDebug={groundedData.debug || null}
+                                        onNavigateDocument={openDocument}
+                                        currentDocId={docId}
+                                        belowSummary={
+                                            <GroundedFollowUpChips
+                                                mode="document"
+                                                disabled={groundedLoading}
+                                                onPick={(q) => {
+                                                    setGroundedQuery(q);
+                                                    runGroundedInsight({ query: q, docId, topK: 8 });
+                                                }}
+                                            />
+                                        }
+                                    />
+                                </div>
+                            ) : null}
+                        </section>
 
                         {(detail.insight || '').trim() ? (
                             <section className="document-detail__panel document-detail__panel--insight">
@@ -161,13 +325,22 @@ export default function DocumentDetail({
                         )}
 
                         {Array.isArray(detail.related_snippets) && detail.related_snippets.length > 0 && (
-                            <section className="document-detail__panel">
+                            <section className="document-detail__panel" id="document-detail-related-knowledge">
                                 <div className="document-detail__panel-title">
                                     <Quote size={16} aria-hidden />
                                     {t('related_knowledge_title')}
                                 </div>
                                 {detail.related_snippets.map((s, i) => (
-                                    <div key={i} className="document-detail__excerpt">
+                                    <div
+                                        key={i}
+                                        id={`document-evidence-snippet-${i}`}
+                                        className={[
+                                            'document-detail__excerpt',
+                                            evidenceFlashIdx === i ? 'document-detail__excerpt--evidence-focus' : '',
+                                        ]
+                                            .filter(Boolean)
+                                            .join(' ')}
+                                    >
                                         {s}
                                     </div>
                                 ))}

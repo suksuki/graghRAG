@@ -925,10 +925,18 @@ const App = () => {
 
                     {activeTab === 'graph' && (
                         <div className="graph-container" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                            <div className="graph-intro glass" style={{ flexShrink: 0, margin: '12px 16px', padding: '12px 16px', borderRadius: '10px', fontSize: '13px', lineHeight: 1.5 }}>
-                                <div style={{ fontWeight: '600', marginBottom: '6px' }}>{t('graph_overview_title')}</div>
-                                <div style={{ opacity: 0.85 }}>{t('graph_overview_desc')}</div>
-                            </div>
+                            <p
+                                className="graph-page-lead"
+                                style={{
+                                    flexShrink: 0,
+                                    margin: '8px 16px 4px',
+                                    fontSize: 12,
+                                    lineHeight: 1.45,
+                                    color: 'rgba(226, 232, 240, 0.78)',
+                                }}
+                            >
+                                {t('graph_overview_lead')}
+                            </p>
                             <div style={{ flex: 1, minHeight: 0 }}>
                                 <GraphExplorer />
                             </div>

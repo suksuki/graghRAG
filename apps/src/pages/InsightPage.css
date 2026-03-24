@@ -1,0 +1,83 @@
+/* 洞察页：有据摘要工具条（配色与文档中心一致） */
+.insight-page__grounded {
+    margin-bottom: 28px;
+}
+
+.insight-page__grounded-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+
+.insight-page__grounded-title {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #94a3b8;
+}
+
+.insight-page__grounded-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    border-radius: 10px;
+    border: 1px solid rgba(37, 99, 235, 0.45);
+    background: rgba(37, 99, 235, 0.18);
+    color: #bfdbfe;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.insight-page__grounded-btn:hover:not(:disabled) {
+    background: rgba(37, 99, 235, 0.28);
+    border-color: rgba(96, 165, 250, 0.55);
+}
+
+.insight-page__grounded-btn:disabled {
+    opacity: 0.65;
+    cursor: wait;
+}
+
+.insight-page__grounded-hint {
+    margin: 0 0 14px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: #94a3b8;
+}
+
+.insight-page__grounded-input {
+    width: 100%;
+    box-sizing: border-box;
+    margin-bottom: 10px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(51, 65, 85, 0.65);
+    background: rgba(15, 23, 42, 0.55);
+    color: #e2e8f0;
+    font-size: 14px;
+    font-family: inherit;
+    line-height: 1.45;
+}
+
+.insight-page__grounded-input:focus {
+    outline: none;
+    border-color: rgba(37, 99, 235, 0.45);
+    box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.15);
+}
+
+.insight-page__grounded-error {
+    margin-bottom: 12px;
+    padding: 12px 14px;
+    border-radius: 10px;
+    border: 1px solid rgba(248, 113, 113, 0.35);
+    color: #fca5a5;
+    font-size: 13px;
+}

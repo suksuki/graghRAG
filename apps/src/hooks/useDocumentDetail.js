@@ -23,6 +23,7 @@ export function useDocumentDetail(docId) {
         }
 
         let cancelled = false;
+        setDetail(null);
         setLoading(true);
         setError(null);
 

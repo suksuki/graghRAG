@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from core.document_intelligence import DI_ENTITIES
@@ -20,10 +21,25 @@ from core.kg_edge_filter import (
 logger = logging.getLogger(__name__)
 
 MAX_SOURCE_CHARS = 14_000
+
+
+def _doc_key_for_match(s: Optional[str]) -> str:
+    """与 chunk metadata 的 file_name 对齐：去路径、统一小写，避免 doc_id 与元数据写法不一致。"""
+    if not s:
+        return ""
+    t = str(s).strip().replace("\\", "/")
+    return os.path.basename(t).lower()
 _LANG_NAME = {
     "zh": "Chinese (Simplified)",
     "en": "English",
     "ko": "Korean",
+}
+
+# 有据摘要四段结构标题（须与 prompt 一致，便于前端按 #### 解析）
+_STRUCTURE_SECTION_TITLES: Dict[str, List[str]] = {
+    "zh": ["核心结论", "关键实体", "重要关系", "补充说明"],
+    "en": ["Core conclusion", "Key entities", "Important relations", "Additional notes"],
+    "ko": ["핵심 결론", "핵심 엔티티", "중요 관계", "추가 설명"],
 }
 
 
@@ -111,6 +127,8 @@ def _build_grounded_summary_prompt(
     query: str, sources_text: str, lang: str
 ) -> str:
     lang_name = _LANG_NAME.get(lang, _LANG_NAME["zh"])
+    titles = _STRUCTURE_SECTION_TITLES.get(lang) or _STRUCTURE_SECTION_TITLES["zh"]
+    heading_examples = "\n".join(f"   #### {t}" for t in titles)
     return (
         "You are a document intelligence assistant.\n\n"
         "STRICT RULES:\n"
@@ -118,12 +136,20 @@ def _build_grounded_summary_prompt(
         "2. Do NOT invent entities, numbers, or relationships not in SOURCES.\n"
         "3. If SOURCES are empty or do not answer the question, say clearly that "
         "the retrieved excerpts are insufficient (one or two sentences).\n"
-        "4. Write 3–6 sentences when evidence exists.\n"
-        f"5. Write entirely in {lang_name}.\n"
-        "6. SOURCES are numbered [1], [2], ... After each sentence or factual claim, "
+        "4. When evidence exists, write a structured summary (see rule 8), not a single unstructured paragraph.\n"
+        f"5. Write entirely in {lang_name} (all headings and bullets in that language).\n"
+        "6. SOURCES are numbered [1], [2], ... After each factual claim in a bullet, "
         "append bracket citations using ONLY those numbers, e.g. ...[1] or ...[1][3]. "
-        "Every substantive claim should have at least one citation.\n"
-        "7. Do NOT cite a number that does not appear in SOURCES.\n\n"
+        "Every substantive bullet should have at least one citation.\n"
+        "7. Do NOT cite a number that does not appear in SOURCES.\n"
+        "8. FORMAT (STRICT): Output exactly four sections in this order. Each section MUST begin with "
+        "its own line: a markdown level-4 heading using EXACTLY this pattern (four hash marks, space, title):\n"
+        f"{heading_examples}\n"
+        "   Use the titles above character-for-character (same spelling and punctuation).\n"
+        "   After each heading, write 1–3 bullet lines. Each bullet MUST start with \"- \" (hyphen + space).\n"
+        "   If SOURCES give nothing grounded for a section, use a single bullet briefly stating that "
+        "the excerpts are insufficient for that aspect (still in the target language).\n"
+        "   Do not add a fifth section. Do not skip a section. No text before the first #### line.\n\n"
         f"User question / focus:\n{query.strip()}\n\n"
         "SOURCES (retrieved chunks only; numbers match supporting_chunks.ref_index):\n"
         "-----\n"
@@ -156,6 +182,8 @@ def run_document_insight(
         nodes_with_scores = retriever.retrieve(q)
     except Exception as e:  # noqa: BLE001
         logger.warning("document insight retrieve failed: %s", e)
+    hits_pre_doc_filter = len(nodes_with_scores or [])
+    filter_key = _doc_key_for_match(doc_filter) if doc_filter else ""
     if doc_filter:
         filtered: List[Any] = []
         for nws in nodes_with_scores or []:
@@ -164,11 +192,19 @@ def run_document_insight(
                 continue
             md = getattr(node, "metadata", None) or {}
             fn = str(md.get("file_name") or md.get("source") or "").strip()
-            if fn == doc_filter:
+            if _doc_key_for_match(fn) == filter_key:
                 filtered.append(nws)
         nodes_with_scores = filtered[:top_k]
+        if not filtered and hits_pre_doc_filter:
+            logger.info(
+                "document insight doc_id filter dropped all hits (doc_id=%r match_key=%r, pre_count=%s)",
+                doc_filter,
+                filter_key,
+                hits_pre_doc_filter,
+            )
     else:
         nodes_with_scores = (nodes_with_scores or [])[:top_k]
+    hits_post_doc_filter = len(nodes_with_scores or [])
 
     supporting: List[Dict[str, Any]] = []
     source_blocks: List[str] = []
@@ -258,6 +294,9 @@ def run_document_insight(
         "debug": {
             "chunk_count": len(supporting),
             "doc_filter": doc_filter,
+            "doc_match_key": filter_key or None,
+            "vector_hits_pre_doc_filter": hits_pre_doc_filter,
+            "vector_hits_post_doc_filter": hits_post_doc_filter,
             "graph_relation_count": len(key_relations),
             "min_kg_conf_used": min_kg_conf_query_param(),
         },

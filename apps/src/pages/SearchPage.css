@@ -92,6 +92,91 @@
     cursor: not-allowed;
 }
 
+/* 有据摘要（全库检索词） */
+.search-page__grounded-section {
+    margin-bottom: 24px;
+}
+
+.search-page__grounded-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+
+.search-page__grounded-title {
+    margin: 0;
+    font-size: 12px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--search-muted);
+    font-weight: 600;
+}
+
+.search-page__grounded-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    border-radius: 10px;
+    border: 1px solid rgba(37, 99, 235, 0.45);
+    background: rgba(37, 99, 235, 0.18);
+    color: #bfdbfe;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.search-page__grounded-btn:hover:not(:disabled) {
+    background: rgba(37, 99, 235, 0.28);
+    border-color: rgba(96, 165, 250, 0.55);
+}
+
+.search-page__grounded-btn:disabled {
+    opacity: 0.65;
+    cursor: wait;
+}
+
+.search-page__grounded-btn--ghost {
+    border-color: rgba(148, 163, 184, 0.35);
+    background: rgba(30, 41, 59, 0.5);
+    color: #cbd5e1;
+    font-size: 12px;
+    padding: 6px 12px;
+}
+
+.search-page__grounded-btn--ghost:hover:not(:disabled) {
+    border-color: rgba(129, 140, 248, 0.4);
+    background: rgba(51, 65, 85, 0.45);
+}
+
+.search-page__grounded-loading {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 20px 16px;
+    margin-bottom: 12px;
+    border-radius: 12px;
+    border: 1px dashed rgba(99, 102, 241, 0.28);
+    color: var(--search-muted);
+    font-size: 13px;
+}
+
+.search-page__grounded-hint {
+    margin: 0 0 14px;
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--search-muted);
+}
+
+.search-page__grounded-error {
+    margin-bottom: 12px;
+    text-align: left;
+}
+
 .search-page__results-head {
     display: flex;
     align-items: center;

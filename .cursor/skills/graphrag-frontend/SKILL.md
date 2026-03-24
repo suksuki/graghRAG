@@ -25,6 +25,7 @@ via the `/api` prefix in the frontend:
 - `/api/graph/path?a=<A>&b=<B>`
 - `/api/graph/node_documents?entity=<name>`
 - `/api/insights/corpus` (POST, Document Intelligence 聚合)
+- `/api/v1/insights/document` (POST, **有据摘要**：`summary` 内 `[n]` 与 `supporting_chunks[].ref_index` 对齐；前端见 `GroundedInsightPanel`、`useDocumentInsight`、`parseSummaryRefs`；**行为约束**见项目 skill `document-insight-grounded`)
 
 The normalized response shape for graph data is:
 

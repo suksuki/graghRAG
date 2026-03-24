@@ -1,8 +1,11 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { Search, FileText, Loader2 } from 'lucide-react';
 import { useSearch } from '../hooks/useSearch';
+import { useDocumentInsight } from '../hooks/useDocumentInsight';
+import GroundedInsightPanel from '../components/GroundedInsightPanel';
+import GroundedFollowUpChips from '../components/GroundedFollowUpChips';
 import './SearchPage.css';
 
 /**
@@ -41,10 +44,37 @@ export default function SearchPage() {
     const { t } = useTranslation();
     const navigate = useNavigate();
     const { query, setQuery, results, loading, error, search } = useSearch();
+    const {
+        data: insightData,
+        loading: insightLoading,
+        error: insightError,
+        run: runInsight,
+        reset: resetInsight,
+    } = useDocumentInsight();
+
+    /** 最近一次「搜索提交」的检索词：用于胶囊模板 {{q}}，避免点击胶囊后把整段预设写进输入框导致嵌套。 */
+    const [searchAnchorQuery, setSearchAnchorQuery] = useState('');
+    /** 最近一次发给 Insight API 的 query：刷新摘要时与当前摘要一致。 */
+    const [insightRunQuery, setInsightRunQuery] = useState('');
+
+    useEffect(() => {
+        if (!query.trim()) {
+            resetInsight();
+            setSearchAnchorQuery('');
+            setInsightRunQuery('');
+        }
+    }, [query, resetInsight]);
 
     const onSubmit = (e) => {
         e.preventDefault();
+        const q = query.trim();
+        resetInsight();
         search();
+        if (q) {
+            setSearchAnchorQuery(q);
+            setInsightRunQuery(q);
+            runInsight({ query: q, topK: 8 });
+        }
     };
 
     const openDocument = (docId) => {
@@ -98,6 +128,72 @@ export default function SearchPage() {
                     {loading ? <Loader2 className="spin" size={20} /> : t('search_submit')}
                 </button>
             </form>
+
+            {query.trim() && (loading || insightLoading || insightData || insightError) ? (
+                <section className="search-page__grounded-section" aria-labelledby="search-grounded-heading">
+                    <div className="search-page__grounded-toolbar">
+                        <h2 id="search-grounded-heading" className="search-page__grounded-title">
+                            {t('grounded_insight_section_title')}
+                        </h2>
+                        {insightData || insightError ? (
+                            <button
+                                type="button"
+                                className="search-page__grounded-btn search-page__grounded-btn--ghost"
+                                disabled={insightLoading}
+                                onClick={() =>
+                                    insightRunQuery.trim() &&
+                                    runInsight({ query: insightRunQuery.trim(), topK: 8 })
+                                }
+                            >
+                                {insightLoading ? <Loader2 className="spin" size={18} aria-hidden /> : null}
+                                {t('grounded_insight_refresh')}
+                            </button>
+                        ) : null}
+                    </div>
+                    <p className="search-page__grounded-hint">{t('grounded_insight_search_hint_auto')}</p>
+                    {insightError ? (
+                        <div className="search-page__error search-page__grounded-error" role="alert">
+                            {t('grounded_insight_error')}
+                        </div>
+                    ) : null}
+                    {insightLoading && !insightData ? (
+                        <div className="search-page__grounded-loading" aria-busy="true" aria-label={t('grounded_insight_loading')}>
+                            <Loader2 className="spin" size={22} aria-hidden />
+                            <span>{t('grounded_insight_loading')}</span>
+                        </div>
+                    ) : null}
+                    {insightData ? (
+                        <GroundedInsightPanel
+                            summary={insightData.summary || ''}
+                            supportingChunks={insightData.supporting_chunks || []}
+                            insufficientEvidence={Boolean(insightData.insufficient_evidence)}
+                            apiDebug={insightData.debug || null}
+                            onNavigateDocument={(fn, meta) =>
+                                navigate(`/docs/${encodeURIComponent(fn)}`, {
+                                    state: {
+                                        documentReturnTo: '/search',
+                                        evidenceAnchor:
+                                            meta?.snippet && meta?.refIndex != null
+                                                ? { refIndex: meta.refIndex, snippet: meta.snippet }
+                                                : undefined,
+                                    },
+                                })
+                            }
+                            belowSummary={
+                                <GroundedFollowUpChips
+                                    mode="search"
+                                    searchQuery={searchAnchorQuery}
+                                    disabled={insightLoading}
+                                    onPick={(picked) => {
+                                        setInsightRunQuery(picked);
+                                        runInsight({ query: picked, topK: 8 });
+                                    }}
+                                />
+                            }
+                        />
+                    ) : null}
+                </section>
+            ) : null}
 
             {(query.trim() && (results.length > 0 || loading || error || showEmpty)) && (
                 <>

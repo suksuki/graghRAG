@@ -1,0 +1,95 @@
+.grounded-follow {
+    margin: 14px 0 4px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(51, 65, 85, 0.45);
+}
+
+.grounded-follow__head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #94a3b8;
+    margin-bottom: 10px;
+}
+
+.grounded-follow__head svg {
+    flex-shrink: 0;
+    color: #38bdf8;
+    opacity: 0.9;
+}
+
+.grounded-follow__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.grounded-follow__btn {
+    padding: 7px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(56, 189, 248, 0.28);
+    background: rgba(14, 116, 144, 0.18);
+    color: #bae6fd;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+    max-width: 100%;
+    text-align: center;
+}
+
+.grounded-follow__btn:hover:not(:disabled) {
+    background: rgba(14, 165, 233, 0.22);
+    border-color: rgba(125, 211, 252, 0.4);
+}
+
+.grounded-follow__btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.grounded-follow__btn--pending:disabled {
+    opacity: 1;
+    cursor: wait;
+    color: #f8fafc;
+    border-color: rgba(37, 99, 235, 0.65);
+    background: linear-gradient(
+        110deg,
+        #1d4ed8 0%,
+        #2563eb 40%,
+        #3b82f6 50%,
+        #2563eb 60%,
+        #1d4ed8 100%
+    );
+    background-size: 200% 100%;
+    animation: grounded-follow-shimmer 1.25s ease-in-out infinite;
+    box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.35), 0 4px 14px rgba(37, 99, 235, 0.25);
+}
+
+@keyframes grounded-follow-shimmer {
+    0% {
+        background-position: 100% 0;
+    }
+    100% {
+        background-position: -100% 0;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .grounded-follow__btn--pending:disabled {
+        animation: none;
+        background: #2563eb;
+    }
+}
+
+.grounded-follow__status {
+    margin: 10px 0 0;
+    font-size: 12px;
+    line-height: 1.45;
+    color: #94a3b8;
+    font-weight: 500;
+}
