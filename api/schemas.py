@@ -47,6 +47,9 @@ class ProductDocItem(BaseModel):
     keywords: List[str] = []
     topics: List[str] = []
     doc_type: str = ""
+    uploaded_at: Optional[str] = None
+    mtime: float = 0.0
+    size: Optional[int] = None
 
 
 class ProductDocListResponse(BaseModel):

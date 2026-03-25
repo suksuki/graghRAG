@@ -3,7 +3,7 @@ import axios from 'axios';
 import { useTranslation } from 'react-i18next';
 
 /**
- * GET /api/knowledge/docs → { documents: [{ id, name, summary, entities, tags }, ...] }
+ * GET /api/knowledge/docs → { documents: [{ id, name, summary, mtime, size, … }, ...] }
  */
 export function useDocuments() {
     const { i18n } = useTranslation();

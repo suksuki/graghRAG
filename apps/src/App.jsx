@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Send, Upload, Share2, Database, Network, Search, FileText, Image as ImageIcon, CheckCircle, Loader2, Languages, Trash2, Settings as SettingsIcon, Activity, Zap, Clock, User, Library, Sparkles } from 'lucide-react';
+import { Send, Share2, Database, Network, Search, CheckCircle, Loader2, Languages, Settings as SettingsIcon, Activity, Zap, Library, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -16,14 +16,13 @@ const App = () => {
     const { t, i18n } = useTranslation();
     const navigate = useNavigate();
     const location = useLocation();
-    const [activeTab, setActiveTab] = useState('chat'); // chat, graph, documents, search, entity, docs, settings
+    const [activeTab, setActiveTab] = useState('chat'); // chat, graph, documents, search, entity, settings
     const [query, setQuery] = useState('');
     const [queryMode, setQueryMode] = useState('vector'); // vector | graph | hybrid
     const [messages, setMessages] = useState([{ role: 'assistant', text: t('welcome') }]);
     const [loading, setLoading] = useState(false);
 
     // Data States
-    const [documents, setDocuments] = useState([]);
     const [graphData, setGraphData] = useState({ nodes: [], links: [] });
     const [ingestionStatus, setIngestionStatus] = useState({ status: 'idle', node_count: 0 });
     const [appSettings, setAppSettings] = useState({});
@@ -167,7 +166,6 @@ const App = () => {
     }, [i18n.language]);
 
     useEffect(() => {
-        if (activeTab === 'docs') fetchDocuments();
         if (activeTab === 'graph') fetchGraphData();
         if (activeTab === 'settings') {
             fetchAppSettings();
@@ -196,13 +194,6 @@ const App = () => {
             /* ignore */
         }
     }, []);
-
-    const fetchDocuments = async () => {
-        try {
-            const res = await axios.get('/api/documents');
-            setDocuments(res.data);
-        } catch (e) { }
-    };
 
     const fetchGraphData = async () => {
         try {
@@ -382,11 +373,21 @@ const App = () => {
         } catch (e) { }
     }, [activeTab]);
 
-    const deleteDocument = async (name) => {
+    const deleteLibraryDocument = async (doc) => {
+        const name = doc?.name;
+        if (!name) return;
         if (!window.confirm(t('delete_confirm', { name }))) return;
         try {
             await axios.delete(`/api/documents/${encodeURIComponent(name)}`);
-            fetchDocuments(); // Refresh list
+            const key = doc?.id ?? doc?.doc_id ?? name;
+            if (
+                selectedLibraryDoc &&
+                (selectedLibraryDoc === name || selectedLibraryDoc === key || String(selectedLibraryDoc) === String(doc?.id))
+            ) {
+                setSelectedLibraryDoc(null);
+                navigate('/documents');
+            }
+            window.dispatchEvent(new Event('graphrag_refetch_docs'));
         } catch (e) {
             openErrorModal(e?.response?.data?.error || { message: t('delete_failed'), detail: e.response?.data?.detail || e.message });
         }
@@ -458,10 +459,15 @@ const App = () => {
                 files: names,
             });
             if (res.data?.ingestion_mode === 'inline' || res.data?.status === 'completed') {
-                fetchDocuments();
                 try {
                     window.dispatchEvent(new Event('graphrag_refetch_docs'));
                 } catch (_) { /* ignore */ }
+            }
+            if (names.length === 1) {
+                const id = names[0];
+                setSelectedLibraryDoc(id);
+                setActiveTab('documents');
+                navigate(`/docs/${encodeURIComponent(id)}`, { state: { fromUpload: true } });
             }
             if (names.length > 0) setTimeout(() => setLastUploadedFiles([]), 8000);
         } catch (e) {
@@ -513,8 +519,17 @@ const App = () => {
                     } catch (_) {
                         /* ignore */
                     }
-                    fetchDocuments();
+                    try {
+                        window.dispatchEvent(new Event('graphrag_refetch_docs'));
+                    } catch (_) { /* ignore */ }
                     fetchIngestionStatus();
+                    const okFiles = statuses.filter((s) => s.status === 'done').map((s) => s.file).filter(Boolean);
+                    if (!anyFailed && okFiles.length === 1) {
+                        const id = okFiles[0];
+                        setSelectedLibraryDoc(id);
+                        setActiveTab('documents');
+                        navigate(`/docs/${encodeURIComponent(id)}`, { state: { fromUpload: true } });
+                    }
                 }
             } catch (e) {
                 setIngestionStatus(prev => ({
@@ -528,21 +543,92 @@ const App = () => {
         return () => { stopped = true; clearInterval(timer); };
     }, [uploadJobs.length]);
 
+    const workspaceDocActive = activeTab === 'documents' || activeTab === 'entity';
+
     return (
         <div className="app-container">
-            <aside className="sidebar glass">
-                <div className="logo-section">
-                    <Share2 size={32} className="logo-icon" />
-                    <h1 className="logo-text">GraphRAG<span> Platform</span></h1>
+            <header className="top-nav glass">
+                <div className="top-nav__left">
+                    <button
+                        type="button"
+                        className="top-nav__brand"
+                        onClick={() => {
+                            setSelectedLibraryDoc(null);
+                            navigate('/documents');
+                            setActiveTab('documents');
+                        }}
+                    >
+                        <Share2 size={22} className="top-nav__brand-icon" aria-hidden />
+                        <span className="top-nav__brand-text">
+                            GraphRAG<span className="top-nav__brand-muted"> Platform</span>
+                        </span>
+                    </button>
+                    <nav className="top-nav__links" aria-label={t('nav_main_label')}>
+                        <button
+                            type="button"
+                            className={`top-nav__link ${workspaceDocActive ? 'top-nav__link--active' : ''}`}
+                            onClick={() => {
+                                setSelectedLibraryDoc(null);
+                                navigate('/documents');
+                                setActiveTab('documents');
+                            }}
+                        >
+                            <Library size={17} aria-hidden />
+                            {t('nav_document_center')}
+                        </button>
+                        <button
+                            type="button"
+                            className={`top-nav__link ${activeTab === 'chat' ? 'top-nav__link--active' : ''}`}
+                            onClick={() => {
+                                navigate('/');
+                                setActiveTab('chat');
+                            }}
+                        >
+                            <Database size={17} aria-hidden />
+                            {t('knowledge_base')}
+                        </button>
+                        <button
+                            type="button"
+                            className={`top-nav__link ${activeTab === 'graph' ? 'top-nav__link--active' : ''}`}
+                            onClick={() => {
+                                navigate('/');
+                                setActiveTab('graph');
+                            }}
+                        >
+                            <Network size={17} aria-hidden />
+                            {t('graph_overview')}
+                        </button>
+                        <button
+                            type="button"
+                            className={`top-nav__link ${activeTab === 'insight' ? 'top-nav__link--active' : ''}`}
+                            onClick={() => {
+                                navigate('/insight');
+                                setActiveTab('insight');
+                            }}
+                        >
+                            <Sparkles size={17} aria-hidden />
+                            {t('nav_insight')}
+                        </button>
+                        <button
+                            type="button"
+                            className={`top-nav__link ${activeTab === 'settings' ? 'top-nav__link--active' : ''}`}
+                            onClick={() => {
+                                navigate('/');
+                                setActiveTab('settings');
+                            }}
+                        >
+                            <SettingsIcon size={17} aria-hidden />
+                            {t('system_settings')}
+                        </button>
+                    </nav>
                 </div>
-
-                <div className="lang-switcher glass" style={{ marginBottom: '16px', padding: '8px 12px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', opacity: 0.8 }}>
-                        <Languages size={14} />
-                        <select 
-                            value={i18n.language} 
+                <div className="top-nav__right">
+                    <div className="top-nav__lang">
+                        <Languages size={14} aria-hidden />
+                        <select
+                            value={i18n.language}
                             onChange={(e) => i18n.changeLanguage(e.target.value)}
-                            style={{ background: 'transparent', border: 'none', color: 'inherit', outline: 'none', cursor: 'pointer' }}
+                            aria-label={t('language') || 'Language'}
                         >
                             <option value="zh">简体中文 (Alt+L)</option>
                             <option value="en">English (Alt+L)</option>
@@ -550,105 +636,7 @@ const App = () => {
                         </select>
                     </div>
                 </div>
-
-                <nav className="nav-menu">
-                    <div className={`nav-item ${activeTab === 'chat' ? 'active' : ''}`} onClick={() => { navigate('/'); setActiveTab('chat'); }}>
-                        <Database size={18} /><span>{t('knowledge_base')}</span>
-                    </div>
-                    <div className={`nav-item ${activeTab === 'graph' ? 'active' : ''}`} onClick={() => { navigate('/'); setActiveTab('graph'); }}>
-                        <Network size={18} /><span>{t('graph_overview')}</span>
-                    </div>
-                    <div className={`nav-item ${activeTab === 'documents' ? 'active' : ''}`} onClick={() => { setSelectedLibraryDoc(null); navigate('/documents'); setActiveTab('documents'); }}>
-                        <Library size={18} /><span>{t('nav_document_center')}</span>
-                    </div>
-                    <div className={`nav-item ${activeTab === 'insight' ? 'active' : ''}`} onClick={() => { navigate('/insight'); setActiveTab('insight'); }}>
-                        <Sparkles size={18} /><span>{t('nav_insight')}</span>
-                    </div>
-                    <div className={`nav-item ${activeTab === 'search' ? 'active' : ''}`} onClick={() => { navigate('/search'); setActiveTab('search'); }}>
-                        <Search size={18} /><span>{t('nav_search')}</span>
-                    </div>
-                    <div className={`nav-item ${activeTab === 'docs' ? 'active' : ''}`} onClick={() => { navigate('/'); setActiveTab('docs'); }}>
-                        <FileText size={18} /><span>{t('doc_management')}</span>
-                    </div>
-                    <div className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => { navigate('/'); setActiveTab('settings'); }}>
-                        <SettingsIcon size={18} /><span>{t('system_settings')}</span>
-                    </div>
-                </nav>
-
-                <div className="ingestion-indicator glass">
-                    <div className="indicator-header">
-                        <Activity size={14} className={ingestionStatus.status === 'processing' ? 'pulse' : ''} />
-                        <span>
-                            {t('ingestion_status')}: {
-                                ingestionStatus.status === 'processing'
-                                    ? (ingestionStatus.message || t('analyzing'))
-                                    : ingestionStatus.status === 'failed'
-                                        ? (ingestionStatus.message || t('ingestion_failed'))
-                                        : t('idle')
-                            }
-                        </span>
-                    </div>
-                    {ingestionStatus.status === 'processing' && (
-                        <>
-                            {(ingestionStatus.files_in_batch > 0 || (ingestionStatus.file_names && ingestionStatus.file_names.length > 0)) && (
-                                <div className="indicator-stat" style={{ marginTop: '6px', fontSize: '11px', color: '#64748b', lineHeight: 1.3 }}>
-                                    {t('files_in_batch')}: {ingestionStatus.files_in_batch || ingestionStatus.file_names?.length || 0}
-                                    {ingestionStatus.file_names?.length > 0 && ingestionStatus.file_names.length <= 4 && (
-                                        <span style={{ marginLeft: '4px', opacity: 0.9 }}>
-                                            {ingestionStatus.file_names.join(', ')}
-                                        </span>
-                                    )}
-                                    {ingestionStatus.file_names?.length > 4 && (
-                                        <span style={{ marginLeft: '4px', opacity: 0.9 }}>
-                                            {ingestionStatus.file_names.slice(0, 2).join(', ')} {t('and_n_more', { n: ingestionStatus.file_names.length - 2 })}
-                                        </span>
-                                    )}
-                                </div>
-                            )}
-                            <div className="progress-bar-container" style={{ marginTop: '6px', background: '#e2e8f0', height: '8px', borderRadius: '4px', overflow: 'hidden' }}>
-                                <div className="progress-bar-fill" style={{ width: `${ingestionStatus.progress || 0}%`, background: '#6366f1', height: '100%', transition: 'width 0.4s ease-out' }}></div>
-                            </div>
-                            {ingestionStatus.graph_total > 0 && (
-                                <div className="indicator-stat" style={{ marginTop: '4px', fontSize: '12px', color: '#64748b' }}>
-                                    {t('graph_chunks_progress')}: {ingestionStatus.graph_done || 0}/{ingestionStatus.graph_total} {t('chunks_unit')} · {graphProgressPct}%
-                                </div>
-                            )}
-                        </>
-                    )}
-                    {ingestionStatus.status === 'failed' && (
-                        <div style={{ marginTop: '8px', fontSize: '12px', color: '#fca5a5', lineHeight: 1.4 }}>
-                            ❌ {ingestionStatus.message || t('ingestion_failed_retry')}
-                        </div>
-                    )}
-                    {lastUploadedFiles.length > 0 && (
-                        <div className="indicator-stat" style={{ marginTop: '6px', fontSize: '11px', color: '#22c55e' }}>
-                            {lastUploadedFiles.length === 1
-                                ? t('upload_success') + ': ' + lastUploadedFiles[0]
-                                : t('upload_success_multi', { count: lastUploadedFiles.length }) + ': ' + lastUploadedFiles.slice(0, 3).join(', ') + (lastUploadedFiles.length > 3 ? ' …' : '')}
-                        </div>
-                    )}
-                    <div className="indicator-stat" style={{ marginTop: '8px' }}>
-                        {t('record_count')}: {ingestionStatus.node_count ?? 0}{t('entities_unit') ? ` ${t('entities_unit')}` : ''}
-                    </div>
-                </div>
-
-                <div className="upload-section">
-                    <label className="upload-btn">
-                        {isUploading ? (
-                            <>
-                                <Loader2 className="spin" size={18} />
-                                <span style={{ marginLeft: '8px', fontSize: '12px' }}>{uploadProgress}%</span>
-                            </>
-                        ) : (
-                            <>
-                                <Upload size={18} />
-                                <span>{t('upload')}</span>
-                            </>
-                        )}
-                        <input type="file" multiple hidden onChange={(e) => { handleFileUpload(e); e.target.value = null; }} />
-                    </label>
-                </div>
-            </aside>
+            </header>
 
             <main className="chat-area">
                 {errorModal && (
@@ -944,23 +932,43 @@ const App = () => {
                     )}
 
                     {activeTab === 'documents' && (
-                        selectedLibraryDoc ? (
-                            <DocumentDetail
-                                docId={selectedLibraryDoc}
-                                onBack={() => {
-                                    setSelectedLibraryDoc(null);
-                                    navigate('/documents');
+                        <div className="document-hub">
+                            <DocumentPage
+                                selectedDocId={selectedLibraryDoc}
+                                onSelectDoc={(id) => {
+                                    setSelectedLibraryDoc(id);
+                                    navigate(`/docs/${encodeURIComponent(id)}`);
                                 }}
-                                onEntityNavigate={openEntityPage}
-                                onSuggestedQuestion={(q) => {
-                                    setActiveTab('chat');
-                                    setQuery(q);
-                                    setTimeout(() => submitQuery(q), 0);
+                                onDeleteDocument={deleteLibraryDocument}
+                                upload={{
+                                    onFileChange: handleFileUpload,
+                                    isUploading,
+                                    uploadProgress,
                                 }}
                             />
-                        ) : (
-                            <DocumentPage />
-                        )
+                            {selectedLibraryDoc ? (
+                                <div className="document-hub__detail">
+                                    <DocumentDetail
+                                        key={selectedLibraryDoc}
+                                        docId={selectedLibraryDoc}
+                                        onBack={() => {
+                                            setSelectedLibraryDoc(null);
+                                            navigate('/documents');
+                                        }}
+                                        onEntityNavigate={openEntityPage}
+                                        onSuggestedQuestion={(q) => {
+                                            setActiveTab('chat');
+                                            setQuery(q);
+                                            setTimeout(() => submitQuery(q), 0);
+                                        }}
+                                        onOpenGraphStudio={() => {
+                                            navigate('/');
+                                            setActiveTab('graph');
+                                        }}
+                                    />
+                                </div>
+                            ) : null}
+                        </div>
                     )}
 
                     {activeTab === 'search' && <SearchPage />}
@@ -990,42 +998,6 @@ const App = () => {
                                 </div>
                             </div>
                         )
-                    )}
-
-                    {activeTab === 'docs' && (
-                        <div className="docs-container">
-                            <h2>{t('doc_management')}</h2>
-                            <div className="docs-grid">
-                                {documents.map((doc, i) => (
-                                    <div key={i} className="doc-item glass" style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '20px' }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
-                                            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', flex: 1 }}>
-                                                <FileText size={24} className="doc-icon" style={{ flexShrink: 0, marginTop: '2px' }} /> 
-                                                <span className="doc-name" style={{ fontWeight: 'bold' }}>{doc.name}</span>
-                                            </div>
-                                            <button 
-                                                onClick={() => deleteDocument(doc.name)}
-                                                style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', padding: '4px', flexShrink: 0 }}
-                                                className="delete-doc-btn"
-                                            >
-                                                <Trash2 size={16} />
-                                            </button>
-                                        </div>
-                                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                <Clock size={12} /> <span>{doc.uploaded_at}</span>
-                                            </div>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                <User size={12} /> <span>{doc.uploader}</span>
-                                            </div>
-                                            <div style={{ marginTop: '4px', opacity: 0.7, fontWeight: '500' }}>
-                                                {formatSize(doc.size)}
-                                            </div>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
                     )}
 
                     {activeTab === 'settings' && (
@@ -1126,9 +1098,11 @@ const App = () => {
                         <div className="status-dot"></div>
                         <span>{t('system_online')}</span>
                     </div>
+                    <div className="status-item status-item--nodes" aria-live="polite">
+                        <span>{t('status_bar_neo4j_nodes', { count: ingestionStatus.node_count ?? 0 })}</span>
+                    </div>
                     <div className="status-item">
-                        <Activity size={12} />
-                        <span>{t('database_status')}</span>
+                        <span>{t('status_bar_postgres')}</span>
                     </div>
                 </div>
                 <div className="status-right">
@@ -1144,6 +1118,28 @@ const App = () => {
                         <span>{t('current_embedding')}</span>
                         <span className="model-badge">{appSettings.embedding_model || '…'}</span>
                     </div>
+                    {ingestionStatus.status === 'processing' ? (
+                        <div
+                            className="status-item status-ingest status-ingest--processing status-ingest--trailing"
+                            title={
+                                ingestionStatus.file_names?.length
+                                    ? ingestionStatus.file_names.join(', ')
+                                    : (ingestionStatus.message || t('analyzing'))
+                            }
+                        >
+                            <Activity size={12} className="pulse" aria-hidden />
+                            <span className="status-ingest__text">{ingestionStatus.message || t('analyzing')}</span>
+                        </div>
+                    ) : null}
+                    {ingestionStatus.status === 'failed' ? (
+                        <div
+                            className="status-item status-ingest status-ingest--fail status-ingest--trailing"
+                            title={ingestionStatus.message || t('ingestion_failed')}
+                        >
+                            <Activity size={12} aria-hidden />
+                            <span className="status-ingest__text">{t('ingestion_failed')}</span>
+                        </div>
+                    ) : null}
                 </div>
             </footer>
         </div>

@@ -758,6 +758,20 @@
     line-height: 0;
 }
 
+/* Lightweight reasoning：多引用同句时，点明「共同支撑结论」（纯文案，无图） */
+.grounded-insight__tooltip-reasoning-hint {
+    margin: 0 0 8px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    background: rgba(34, 197, 94, 0.08);
+    border-left: 2px solid rgba(74, 222, 128, 0.35);
+    font-size: 11px;
+    line-height: 1.45;
+    font-weight: 500;
+    font-style: italic;
+    color: #bbf7d0;
+}
+
 .grounded-insight__tooltip-snippet {
     font-size: 12px;
     line-height: 1.5;

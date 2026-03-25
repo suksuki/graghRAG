@@ -65,5 +65,36 @@ export function useDocumentDetail(docId) {
         };
     }, [docId, i18n.language]);
 
+    useEffect(() => {
+        if (!docId) return;
+
+        const headers = { 'x-lang': i18n.language || 'zh' };
+
+        const softRefetch = async () => {
+            try {
+                const r = await axios.get(`/api/knowledge/docs/${encodeURIComponent(docId)}`, { headers });
+                setDetail((prev) => r.data ?? prev);
+            } catch {
+                /* 保留当前 detail，避免摄取中短暂 404 清空界面 */
+            }
+
+            try {
+                const sres = await fetch(
+                    `/api/graph/suggestions?doc_id=${encodeURIComponent(docId)}`,
+                    { headers }
+                );
+                if (sres.ok) {
+                    const sj = await sres.json();
+                    setSuggestions(Array.isArray(sj?.questions) ? sj.questions : []);
+                }
+            } catch {
+                /* 保留原 recommendations */
+            }
+        };
+
+        window.addEventListener('graphrag_refetch_docs', softRefetch);
+        return () => window.removeEventListener('graphrag_refetch_docs', softRefetch);
+    }, [docId, i18n.language]);
+
     return { detail, suggestions, loading, error };
 }

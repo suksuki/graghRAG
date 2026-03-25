@@ -9,11 +9,12 @@ import {
     AlignLeft,
     Network,
     Quote,
-    MapPin,
     Loader2,
+    MapPin,
     ListOrdered,
     Layers,
     Tag,
+    Sparkles,
 } from 'lucide-react';
 import { useDocumentDetail } from '../hooks/useDocumentDetail';
 import { useDocumentInsight } from '../hooks/useDocumentInsight';
@@ -21,11 +22,17 @@ import GroundedInsightPanel from '../components/GroundedInsightPanel';
 import GroundedFollowUpChips from '../components/GroundedFollowUpChips';
 import './DocumentDetail.css';
 
+function autoInsightFingerprint(d) {
+    if (!d) return '0';
+    return `${(d.related_snippets || []).length}:${String(d.summary || '').length}:${String(d.insight || '').length}`;
+}
+
 export default function DocumentDetail({
     docId,
     onBack,
     onEntityNavigate,
     onSuggestedQuestion,
+    onOpenGraphStudio,
 }) {
     const { t } = useTranslation();
     const location = useLocation();
@@ -44,11 +51,14 @@ export default function DocumentDetail({
     } = useDocumentInsight();
     const [groundedQuery, setGroundedQuery] = useState('');
     const [entitiesExpanded, setEntitiesExpanded] = useState(false);
+    const [metaFoldOpen, setMetaFoldOpen] = useState(false);
     const entityPreview = 8;
     const autoInsightDocRef = useRef(null);
+    const fromUpload = Boolean(location.state?.fromUpload);
 
     useEffect(() => {
         setEntitiesExpanded(false);
+        setMetaFoldOpen(false);
     }, [docId]);
 
     useEffect(() => {
@@ -84,18 +94,21 @@ export default function DocumentDetail({
         }
 
         setEvidenceFlashIdx(idx >= 0 ? idx : null);
+        setMetaFoldOpen(true);
         requestAnimationFrame(() => {
-            if (idx >= 0) {
-                document.getElementById(`document-evidence-snippet-${idx}`)?.scrollIntoView({
-                    behavior: 'smooth',
-                    block: 'center',
-                });
-            } else {
-                document.getElementById('document-detail-related-knowledge')?.scrollIntoView({
-                    behavior: 'smooth',
-                    block: 'start',
-                });
-            }
+            requestAnimationFrame(() => {
+                if (idx >= 0) {
+                    document.getElementById(`document-evidence-snippet-${idx}`)?.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'center',
+                    });
+                } else {
+                    document.getElementById('document-detail-related-knowledge')?.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'start',
+                    });
+                }
+            });
         });
 
         const clearFlash = window.setTimeout(() => setEvidenceFlashIdx(null), 5200);
@@ -111,14 +124,63 @@ export default function DocumentDetail({
     }, [detail, docId, evidenceSnippetFromNav, navigate, location.hash, location.pathname, location.search]);
 
     useEffect(() => {
+        if (!fromUpload) return undefined;
+
+        const strip = () => {
+            const next = { ...(location.state || {}) };
+            delete next.fromUpload;
+            navigate(
+                { pathname: location.pathname, search: location.search, hash: location.hash || '' },
+                { replace: true, state: Object.keys(next).length ? next : undefined }
+            );
+        };
+
+        const settled = !groundedLoading && (groundedData != null || groundedError != null);
+        if (settled) {
+            strip();
+            return undefined;
+        }
+
+        const tmr = window.setTimeout(strip, 20000);
+        return () => window.clearTimeout(tmr);
+    }, [
+        fromUpload,
+        groundedLoading,
+        groundedData,
+        groundedError,
+        navigate,
+        location.pathname,
+        location.search,
+        location.hash,
+        location.state,
+    ]);
+
+    useEffect(() => {
         if (!detail || !docId || loading) return;
-        if (autoInsightDocRef.current === docId) return;
-        autoInsightDocRef.current = docId;
-        runGroundedInsight({
-            query: t('grounded_insight_doc_default_query'),
-            docId,
-            topK: 8,
-        });
+        const key = `${docId}|${autoInsightFingerprint(detail)}`;
+        if (autoInsightDocRef.current === key) return;
+
+        const run = () => {
+            if (autoInsightDocRef.current === key) return;
+            autoInsightDocRef.current = key;
+            runGroundedInsight({
+                query: t('grounded_insight_doc_default_query'),
+                docId,
+                topK: 8,
+            });
+        };
+
+        const firstForDoc =
+            autoInsightDocRef.current === null ||
+            !String(autoInsightDocRef.current).startsWith(`${docId}|`);
+
+        if (firstForDoc) {
+            run();
+            return undefined;
+        }
+
+        const handle = window.setTimeout(run, 500);
+        return () => window.clearTimeout(handle);
     }, [detail, docId, loading, t, runGroundedInsight]);
 
     const openDocument = useCallback(
@@ -201,6 +263,13 @@ export default function DocumentDetail({
                             ) : null}
                         </h1>
 
+                        {fromUpload ? (
+                            <div className="document-detail__upload-guidance" role="status">
+                                <Sparkles size={16} aria-hidden style={{ flexShrink: 0, marginTop: 2, color: '#a5b4fc' }} />
+                                <span>{t('document_detail_upload_guidance')}</span>
+                            </div>
+                        ) : null}
+
                         <section className="document-detail__panel document-detail__panel--grounded-insight document-detail__panel--grounded-first">
                             <div className="document-detail__panel-title">
                                 <Quote size={16} aria-hidden />
@@ -259,6 +328,43 @@ export default function DocumentDetail({
                             ) : null}
                         </section>
 
+                        {onOpenGraphStudio ? (
+                            <div className="document-detail__explore-row">
+                                <button type="button" className="document-detail__explore-link" onClick={() => onOpenGraphStudio()}>
+                                    <Network size={14} aria-hidden />
+                                    {t('document_open_graph_explorer')}
+                                </button>
+                            </div>
+                        ) : null}
+
+                        {suggestions.length > 0 ? (
+                            <section className="document-detail__suggestions" aria-label={t('document_discovery_questions')}>
+                                <div className="document-detail__suggestions-head">
+                                    <MapPin size={16} className="document-detail__suggestions-icon" aria-hidden />
+                                    <h3 className="document-detail__suggestions-title">{t('document_detail_continue_explore_title')}</h3>
+                                </div>
+                                <div>
+                                    {suggestions.slice(0, 8).map((q, qi) => (
+                                        <button
+                                            key={qi}
+                                            type="button"
+                                            className="document-detail__suggest-btn"
+                                            onClick={() => onSuggestedQuestion?.(q)}
+                                        >
+                                            {q}
+                                        </button>
+                                    ))}
+                                </div>
+                            </section>
+                        ) : null}
+
+                        <details
+                            className="document-detail__fold"
+                            open={metaFoldOpen}
+                            onToggle={(e) => setMetaFoldOpen(e.currentTarget.open)}
+                        >
+                            <summary className="document-detail__fold-summary">{t('document_detail_fold_meta_summary')}</summary>
+                            <div className="document-detail__fold-body">
                         {(detail.insight || '').trim() ? (
                             <section className="document-detail__panel document-detail__panel--insight">
                                 <div className="document-detail__panel-title document-detail__panel-title--accent">
@@ -346,103 +452,85 @@ export default function DocumentDetail({
                                 ))}
                             </section>
                         )}
+                            </div>
+                        </details>
+
+                        <details className="document-detail__fold">
+                            <summary className="document-detail__fold-summary">{t('document_detail_fold_entities_summary')}</summary>
+                            <div className="document-detail__fold-body">
+                                <section className="document-detail__panel">
+                                    <div className="document-detail__panel-title">
+                                        <Network size={16} aria-hidden />
+                                        {t('entities_title')}
+                                    </div>
+                                    <div>
+                                        {(() => {
+                                            const ents = detail.entities || [];
+                                            const hidden = Math.max(0, ents.length - entityPreview);
+                                            const shown = entitiesExpanded ? ents : ents.slice(0, entityPreview);
+                                            return (
+                                                <>
+                                                    {shown.map((en, i) => (
+                                                        <button
+                                                            key={`${en}-${i}`}
+                                                            type="button"
+                                                            className="document-detail__entity-pill"
+                                                            title={t('entity_pill_navigate_hint')}
+                                                            onClick={() => onEntityNavigate?.(en)}
+                                                        >
+                                                            {en}
+                                                        </button>
+                                                    ))}
+                                                    {hidden > 0 && !entitiesExpanded ? (
+                                                        <button
+                                                            type="button"
+                                                            className="document-detail__entity-more"
+                                                            onClick={() => setEntitiesExpanded(true)}
+                                                        >
+                                                            {t('entity_show_more', { count: hidden })}
+                                                        </button>
+                                                    ) : null}
+                                                    {ents.length === 0 ? (
+                                                        <span style={{ fontSize: '13px', opacity: 0.75 }}>{t('entities_empty')}</span>
+                                                    ) : null}
+                                                </>
+                                            );
+                                        })()}
+                                    </div>
+                                </section>
+
+                                {Array.isArray(detail.relations) && detail.relations.length > 0 && (
+                                    <section className="document-detail__panel">
+                                        <div className="document-detail__panel-title">
+                                            <Network size={16} aria-hidden />
+                                            {t('relations_title')}
+                                        </div>
+                                        {detail.relations.slice(0, 32).map((rel, i) => (
+                                            <div key={i} className="document-detail__rel-row">
+                                                <button
+                                                    type="button"
+                                                    className="document-detail__rel-link"
+                                                    onClick={() => onEntityNavigate?.(rel.source)}
+                                                >
+                                                    {rel.source}
+                                                </button>
+                                                <span style={{ opacity: 0.65 }}>{rel.relation}</span>
+                                                <button
+                                                    type="button"
+                                                    className="document-detail__rel-link"
+                                                    onClick={() => onEntityNavigate?.(rel.target)}
+                                                >
+                                                    {rel.target}
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </section>
+                                )}
+                            </div>
+                        </details>
                     </>
                 )}
             </div>
-
-            <aside className="document-detail__side">
-                {detail && (
-                    <>
-                        <section className="document-detail__panel">
-                            <div className="document-detail__panel-title">
-                                <Network size={16} aria-hidden />
-                                {t('entities_title')}
-                            </div>
-                            <div>
-                                {(() => {
-                                    const ents = detail.entities || [];
-                                    const hidden = Math.max(0, ents.length - entityPreview);
-                                    const shown = entitiesExpanded ? ents : ents.slice(0, entityPreview);
-                                    return (
-                                        <>
-                                            {shown.map((en, i) => (
-                                                <button
-                                                    key={`${en}-${i}`}
-                                                    type="button"
-                                                    className="document-detail__entity-pill"
-                                                    title={t('entity_pill_navigate_hint')}
-                                                    onClick={() => onEntityNavigate?.(en)}
-                                                >
-                                                    {en}
-                                                </button>
-                                            ))}
-                                            {hidden > 0 && !entitiesExpanded ? (
-                                                <button
-                                                    type="button"
-                                                    className="document-detail__entity-more"
-                                                    onClick={() => setEntitiesExpanded(true)}
-                                                >
-                                                    {t('entity_show_more', { count: hidden })}
-                                                </button>
-                                            ) : null}
-                                            {ents.length === 0 ? (
-                                                <span style={{ fontSize: '13px', opacity: 0.75 }}>{t('entities_empty')}</span>
-                                            ) : null}
-                                        </>
-                                    );
-                                })()}
-                            </div>
-                        </section>
-
-                        {Array.isArray(detail.relations) && detail.relations.length > 0 && (
-                            <section className="document-detail__panel">
-                                <div className="document-detail__panel-title">
-                                    <Network size={16} aria-hidden />
-                                    {t('relations_title')}
-                                </div>
-                                {detail.relations.slice(0, 32).map((rel, i) => (
-                                    <div key={i} className="document-detail__rel-row">
-                                        <button
-                                            type="button"
-                                            className="document-detail__rel-link"
-                                            onClick={() => onEntityNavigate?.(rel.source)}
-                                        >
-                                            {rel.source}
-                                        </button>
-                                        <span style={{ opacity: 0.65 }}>{rel.relation}</span>
-                                        <button
-                                            type="button"
-                                            className="document-detail__rel-link"
-                                            onClick={() => onEntityNavigate?.(rel.target)}
-                                        >
-                                            {rel.target}
-                                        </button>
-                                    </div>
-                                ))}
-                            </section>
-                        )}
-
-                        {suggestions.length > 0 && (
-                            <section className="document-detail__panel">
-                                <div className="document-detail__panel-title">
-                                    <MapPin size={16} aria-hidden />
-                                    {t('document_discovery_questions')}
-                                </div>
-                                {suggestions.slice(0, 8).map((q, qi) => (
-                                    <button
-                                        key={qi}
-                                        type="button"
-                                        className="document-detail__suggest-btn"
-                                        onClick={() => onSuggestedQuestion?.(q)}
-                                    >
-                                        {q}
-                                    </button>
-                                ))}
-                            </section>
-                        )}
-                    </>
-                )}
-            </aside>
         </div>
     );
 }

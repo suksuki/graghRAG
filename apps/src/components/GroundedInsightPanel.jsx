@@ -705,61 +705,66 @@ export default function GroundedInsightPanel({
                                     </div>
                                 ) : null}
                                 {Array.isArray(tooltip.coCitationRefs) && tooltip.coCitationRefs.length > 0 ? (
-                                    <p className="grounded-insight__tooltip-co-citation" role="note">
-                                        <span className="grounded-insight__tooltip-co-citation-label">
-                                            {t('grounded_insight_tooltip_also_supported_before')}
-                                        </span>
-                                        {tooltip.coCitationRefs.map((r, idx) => {
-                                            const coRank = retrievalRanking.rankByRef.get(r) ?? 0;
-                                            return (
-                                                <span key={`co-${r}`} className="grounded-insight__tooltip-co-citation-item">
-                                                    {idx > 0 ? (
-                                                        <span className="grounded-insight__tooltip-co-citation-sep" aria-hidden>
-                                                            {', '}
-                                                        </span>
-                                                    ) : null}
-                                                    <button
-                                                        type="button"
-                                                        className="grounded-insight__tooltip-co-citation-ref"
-                                                        aria-label={
-                                                            coRank > 0
-                                                                ? t('grounded_insight_tooltip_co_ref_aria', {
-                                                                      n: r,
-                                                                      rank: coRank,
-                                                                      total: retrievalRanking.total,
-                                                                  })
-                                                                : t('grounded_insight_ref_aria', { n: r })
-                                                        }
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            cancelTooltipDismiss();
-                                                            setTooltip(null);
-                                                            onRefClick(r);
-                                                        }}
-                                                    >
-                                                        [{r}]
-                                                    </button>
-                                                    {coRank > 0 ? (
-                                                        <span
-                                                            className="grounded-insight__tooltip-co-citation-rank"
-                                                            title={t('grounded_insight_source_rank_title', {
-                                                                rank: coRank,
-                                                                total: retrievalRanking.total,
-                                                            })}
-                                                            aria-hidden
-                                                        >
-                                                            #{coRank}
-                                                        </span>
-                                                    ) : null}
-                                                </span>
-                                            );
-                                        })}
-                                        {t('grounded_insight_tooltip_also_supported_after') ? (
-                                            <span className="grounded-insight__tooltip-co-citation-after">
-                                                {t('grounded_insight_tooltip_also_supported_after')}
+                                    <>
+                                        <p className="grounded-insight__tooltip-co-citation" role="note">
+                                            <span className="grounded-insight__tooltip-co-citation-label">
+                                                {t('grounded_insight_tooltip_also_supported_before')}
                                             </span>
-                                        ) : null}
-                                    </p>
+                                            {tooltip.coCitationRefs.map((r, idx) => {
+                                                const coRank = retrievalRanking.rankByRef.get(r) ?? 0;
+                                                return (
+                                                    <span key={`co-${r}`} className="grounded-insight__tooltip-co-citation-item">
+                                                        {idx > 0 ? (
+                                                            <span className="grounded-insight__tooltip-co-citation-sep" aria-hidden>
+                                                                {', '}
+                                                            </span>
+                                                        ) : null}
+                                                        <button
+                                                            type="button"
+                                                            className="grounded-insight__tooltip-co-citation-ref"
+                                                            aria-label={
+                                                                coRank > 0
+                                                                    ? t('grounded_insight_tooltip_co_ref_aria', {
+                                                                          n: r,
+                                                                          rank: coRank,
+                                                                          total: retrievalRanking.total,
+                                                                      })
+                                                                    : t('grounded_insight_ref_aria', { n: r })
+                                                            }
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                cancelTooltipDismiss();
+                                                                setTooltip(null);
+                                                                onRefClick(r);
+                                                            }}
+                                                        >
+                                                            [{r}]
+                                                        </button>
+                                                        {coRank > 0 ? (
+                                                            <span
+                                                                className="grounded-insight__tooltip-co-citation-rank"
+                                                                title={t('grounded_insight_source_rank_title', {
+                                                                    rank: coRank,
+                                                                    total: retrievalRanking.total,
+                                                                })}
+                                                                aria-hidden
+                                                            >
+                                                                #{coRank}
+                                                            </span>
+                                                        ) : null}
+                                                    </span>
+                                                );
+                                            })}
+                                            {t('grounded_insight_tooltip_also_supported_after') ? (
+                                                <span className="grounded-insight__tooltip-co-citation-after">
+                                                    {t('grounded_insight_tooltip_also_supported_after')}
+                                                </span>
+                                            ) : null}
+                                        </p>
+                                        <p className="grounded-insight__tooltip-reasoning-hint" role="note">
+                                            {t('grounded_insight_tooltip_reasoning_joint_hint')}
+                                        </p>
+                                    </>
                                 ) : null}
                             </>
                         );

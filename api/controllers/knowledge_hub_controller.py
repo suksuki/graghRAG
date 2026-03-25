@@ -525,6 +525,7 @@ def list_product_documents_controller() -> Dict[str, List[Dict[str, Any]]]:
                 "doc_type": di.get("doc_type") or "",
                 "uploaded_at": disk.get("uploaded_at"),
                 "mtime": disk.get("mtime") or 0.0,
+                "size": disk.get("size"),
             }
         )
     return {"documents": docs}
