@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Send, Share2, Database, Network, Search, CheckCircle, Loader2, Languages, Settings as SettingsIcon, Activity, Zap, Library, Sparkles } from 'lucide-react';
+import { Send, Share2, Database, Network, CheckCircle, Loader2, Languages, Settings as SettingsIcon, Activity, Zap, Library, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -11,6 +11,8 @@ import DocumentDetail from './pages/DocumentDetail.jsx';
 import EntityPage from './pages/EntityPage.jsx';
 import SearchPage from './pages/SearchPage.jsx';
 import InsightPage from './pages/InsightPage.jsx';
+import DocScopePicker from './components/DocScopePicker.jsx';
+import { logInsightEvent } from './utils/insightEvents';
 
 const App = () => {
     const { t, i18n } = useTranslation();
@@ -18,7 +20,7 @@ const App = () => {
     const location = useLocation();
     const [activeTab, setActiveTab] = useState('chat'); // chat, graph, documents, search, entity, settings
     const [query, setQuery] = useState('');
-    const [queryMode, setQueryMode] = useState('vector'); // vector | graph | hybrid
+    const queryMode = 'hybrid';
     const [messages, setMessages] = useState([{ role: 'assistant', text: t('welcome') }]);
     const [loading, setLoading] = useState(false);
 
@@ -35,6 +37,9 @@ const App = () => {
     // 文档中心 / 搜索 / 实体页（P0 产品化）
     const [selectedLibraryDoc, setSelectedLibraryDoc] = useState(null);
     const [entityViewName, setEntityViewName] = useState(null);
+    const [scopeDocs, setScopeDocs] = useState([]);
+    const [selectedScopeDoc, setSelectedScopeDoc] = useState(null);
+    const lastQueryRef = useRef({ ts: 0, len: 0 });
 
     const chatEndRef = useRef(null);
 
@@ -96,6 +101,29 @@ const App = () => {
         ((msg?.graph?.two_hop?.length ?? 0) > 0) ||
         ((msg?.debug?.graph_relations_count ?? 0) > 0)
     );
+    const sourceLabel = (source) => {
+        if (source === 'facts') return '基于文档结构解析';
+        if (source === 'rag') return '基于文档内容分析';
+        return '';
+    };
+    const containsNotFoundAnswer = (text) => {
+        const s = String(text || '').toLowerCase();
+        return (
+            s.includes('未提及') ||
+            s.includes('无法确定') ||
+            s.includes('没有信息') ||
+            s.includes('未明确提及')
+        );
+    };
+    const containsSemanticExpansion = (text) => {
+        const s = String(text || '');
+        const hasFactBoundary = s.includes('未直接提及') || s.includes('文档未提及');
+        const hasSemanticHint =
+            s.includes('可能相关') ||
+            s.includes('相关角色') ||
+            s.includes('可能对应');
+        return hasFactBoundary && hasSemanticHint;
+    };
 
     const getErrorUI = (code) => {
         switch (code) {
@@ -165,14 +193,6 @@ const App = () => {
         };
     }, [i18n.language]);
 
-    useEffect(() => {
-        if (activeTab === 'graph') fetchGraphData();
-        if (activeTab === 'settings') {
-            fetchAppSettings();
-            fetchAvailableModels();
-        }
-    }, [activeTab, selectedLibraryDoc]);
-
     const fetchIngestionStatus = async () => {
         try {
             const res = await axios.get('/api/ingestion/status');
@@ -201,6 +221,33 @@ const App = () => {
             setGraphData(res.data);
         } catch (e) { }
     };
+
+    useEffect(() => {
+        if (activeTab === 'graph') fetchGraphData();
+        if (activeTab === 'settings') {
+            fetchAppSettings();
+            fetchAvailableModels();
+        }
+    }, [activeTab, selectedLibraryDoc]);
+
+    useEffect(() => {
+        if (activeTab !== 'chat') return;
+        let cancelled = false;
+        (async () => {
+            try {
+                const res = await axios.get('/api/knowledge/docs', {
+                    headers: { 'x-lang': i18n.language || 'zh' },
+                });
+                if (cancelled) return;
+                setScopeDocs(Array.isArray(res.data?.documents) ? res.data.documents : []);
+            } catch (e) {
+                if (!cancelled) setScopeDocs([]);
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [activeTab, i18n.language]);
 
     const fetchAppSettings = async () => {
         try {
@@ -256,17 +303,115 @@ const App = () => {
         }
     };
 
+    const resolveScopeDocId = useCallback((doc) => String(doc?.file_name || '').trim(), []);
+    const isDocScopeAssertOn = useCallback(() => {
+        if (import.meta.env.DEV) return true;
+        try {
+            return localStorage.getItem('graphrag_debug_doc_scope_assert') === '1';
+        } catch (_) {
+            return false;
+        }
+    }, []);
+
     const submitQuery = async (inputQuery) => {
         const userQuery = (inputQuery || '').trim();
         if (!userQuery || loading) return;
+        const scopedDocId = resolveScopeDocId(selectedScopeDoc);
+        if (selectedScopeDoc && !scopedDocId && isDocScopeAssertOn()) {
+            console.warn('[DocScope ERROR] doc scoped query not using document insight API', {
+                endpoint: '/api/v1/insights/document',
+                doc_id: scopedDocId,
+                selectedScopeDoc,
+            });
+        }
+        if (scopedDocId) {
+            logInsightEvent({
+                event: 'query_with_doc_scope',
+                doc_id: scopedDocId,
+                payload: {
+                    query_len: userQuery.length,
+                },
+            });
+        }
         setMessages(prev => [...prev, { role: 'user', text: userQuery }]);
         setQuery('');
         setLoading(true);
         try {
+            if (scopedDocId) {
+                const payload = {
+                    query: userQuery,
+                    top_k: 8,
+                    doc_id: scopedDocId,
+                    include_graph_relations: true,
+                };
+                if (isDocScopeAssertOn()) {
+                    const expected = resolveScopeDocId(selectedScopeDoc);
+                    if (!expected || payload.doc_id !== expected) {
+                        console.warn('[DocScope ERROR] doc scoped query not using document insight API', {
+                            endpoint: '/api/v1/insights/document',
+                            doc_id: payload.doc_id,
+                            selectedScopeDoc,
+                        });
+                    }
+                }
+                const r = await axios.post(
+                    '/api/v1/insights/document',
+                    payload,
+                    {
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'x-lang': i18n.language || 'zh',
+                        },
+                    }
+                );
+                const data = r?.data || {};
+                const relations = Array.isArray(data?.key_relations)
+                    ? data.key_relations.map((x) => ({
+                        source: x?.source || '',
+                        relation: x?.relation || '',
+                        target: x?.target || '',
+                    }))
+                    : [];
+                setMessages(prev => [
+                    ...prev,
+                    {
+                        role: 'assistant',
+                        text: data?.summary || t('error_query'),
+                        source: data?.source || 'rag',
+                        sources: null,
+                        pipeline_latency_ms: null,
+                        suggestions: [],
+                        graph: {
+                            relations,
+                            summary: '',
+                            two_hop: [],
+                            count: relations.length,
+                            used: relations.length > 0,
+                        },
+                        debug: data?.debug || null,
+                    },
+                ]);
+                logInsightEvent({
+                    event: 'answer_generated',
+                    doc_id: scopedDocId || '__search__',
+                    payload: {
+                        source: data?.source || 'rag',
+                        answer_len: String(data?.summary || '').length,
+                        contains_not_found: containsNotFoundAnswer(data?.summary),
+                        semantic_expansion_used: containsSemanticExpansion(data?.summary),
+                    },
+                });
+                return;
+            }
+
             const res = await fetch('/api/query/stream', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'x-lang': i18n.language || 'zh' },
-                body: JSON.stringify({ query: userQuery, mode: queryMode }),
+                body: JSON.stringify({
+                    query: userQuery,
+                    mode: queryMode,
+                    doc_id: undefined,
+                }),
             });
             if (!res.ok) throw new Error(res.statusText);
             const assistantId = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
@@ -323,6 +468,17 @@ const App = () => {
                                 };
                                 return next;
                             });
+                            const finalAnswer = event.answer ?? '';
+                            logInsightEvent({
+                                event: 'answer_generated',
+                                doc_id: scopedDocId || '__search__',
+                                payload: {
+                                    source: event?.source || 'rag',
+                                    answer_len: String(finalAnswer).length,
+                                    contains_not_found: containsNotFoundAnswer(finalAnswer),
+                                    semantic_expansion_used: containsSemanticExpansion(finalAnswer),
+                                },
+                            });
                             if (entity) {
                                 try {
                                     const sres = await fetch(`/api/graph/suggestions?entity=${encodeURIComponent(entity)}`, {
@@ -355,6 +511,32 @@ const App = () => {
 
     const handleQuery = async (e) => {
         e.preventDefault();
+        const q = String(query || '').trim();
+        const scopedDocId = resolveScopeDocId(selectedScopeDoc);
+        const now = Date.now();
+        const prev = lastQueryRef.current || { ts: 0, len: 0 };
+        if (q && prev.ts > 0 && now - prev.ts <= 30000) {
+            logInsightEvent({
+                event: 'follow_up_query',
+                doc_id: scopedDocId || '__search__',
+                payload: {
+                    prev_query_len: prev.len || 0,
+                    new_query_len: q.length,
+                },
+            });
+        }
+        if (q) {
+            logInsightEvent({
+                event: 'query_submitted',
+                doc_id: scopedDocId || '__search__',
+                payload: {
+                    has_doc_scope: Boolean(scopedDocId),
+                    query_len: q.length,
+                    doc_id: scopedDocId || '__search__',
+                },
+            });
+            lastQueryRef.current = { ts: now, len: q.length };
+        }
         await submitQuery(query);
     };
 
@@ -675,6 +857,11 @@ const App = () => {
                                         <div className={`message-bubble ${msg.role === 'user' ? 'primary' : 'glass'}`}>
                                             {msg.role === 'assistant' && (
                                                 <>
+                                                {sourceLabel(msg.source) ? (
+                                                    <div style={{ marginBottom: '6px', fontSize: '12px', opacity: 0.78 }}>
+                                                        {sourceLabel(msg.source)}
+                                                    </div>
+                                                ) : null}
                                                 <div style={{ marginBottom: '8px', fontSize: '12px', opacity: 0.9 }}>
                                                     {hasGraphDataMsg(msg)
                                                         ? t('answer_powered_by_graph')
@@ -742,99 +929,23 @@ const App = () => {
                                                                         </button>
                                                                     )}
                                                                 </div>
-
                                                                 {msg.graph?.summary && (
                                                                     <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: '1px solid rgba(255,255,255,0.08)', fontSize: '12px' }}>
                                                                         <div style={{ fontWeight: 600, marginBottom: '4px' }}>{t('key_insight_title')}</div>
                                                                         <div style={{ opacity: 0.9 }}>{msg.graph.summary}</div>
                                                                     </div>
                                                                 )}
-
-                                                                {Array.isArray(msg.graph?.two_hop) && msg.graph.two_hop.length > 0 && (
-                                                                    <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: '1px solid rgba(255,255,255,0.08)', fontSize: '12px' }}>
-                                                                        <div style={{ fontWeight: 600, marginBottom: '6px' }}>{t('two_hop_title')}</div>
-                                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                                                            {msg.graph.two_hop.slice(0, 6).map((row, ridx) => (
-                                                                                <div key={ridx} style={{ opacity: 0.9 }}>
-                                                                                    <span style={{ fontWeight: 600 }}>{row?.product || ''}</span>
-                                                                                    {Array.isArray(row?.domains) && row.domains.length > 0 && (
-                                                                                        <span style={{ opacity: 0.8 }}> → {row.domains.slice(0, 6).join(', ')}</span>
-                                                                                    )}
-                                                                                </div>
-                                                                            ))}
-                                                                        </div>
-                                                                    </div>
-                                                                )}
-
-                                                                {(() => {
-                                                                    const rels = Array.isArray(msg.graph?.relations) ? msg.graph.relations : [];
-                                                                    const provides = rels.filter(r => (r?.relation || '').toUpperCase() === 'PROVIDES').map(r => r?.target).filter(Boolean);
-                                                                    const applies = rels.filter(r => (r?.relation || '').toUpperCase() === 'APPLIES_TO').map(r => r?.target).filter(Boolean);
-                                                                    const products = [...new Set(provides)].slice(0, 8);
-                                                                    const industries = [...new Set(applies)].slice(0, 8);
-                                                                    const hasGroups = products.length > 0 || industries.length > 0;
-
-                                                                    if (!hasGroups) return null;
-
-                                                                    return (
-                                                                        <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: '1px solid rgba(255,255,255,0.08)', fontSize: '12px' }}>
-                                                                            {products.length > 0 && (
-                                                                                <div style={{ marginBottom: '10px' }}>
-                                                                                    <div style={{ fontWeight: 600, marginBottom: '6px' }}>{t('products_title')}</div>
-                                                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                                                                                        {products.map((p, pidx) => (
-                                                                                            <span
-                                                                                                key={pidx}
-                                                                                                onClick={() => p && triggerFollowupEntityQuery(p)}
-                                                                                                style={{ cursor: p ? 'pointer' : 'default', background: 'rgba(99,102,241,0.14)', border: '1px solid rgba(99,102,241,0.25)', padding: '4px 10px', borderRadius: '999px', opacity: 0.95 }}
-                                                                                            >
-                                                                                                {p}
-                                                                                            </span>
-                                                                                        ))}
-                                                                                    </div>
-                                                                                </div>
-                                                                            )}
-                                                                            {industries.length > 0 && (
-                                                                                <div>
-                                                                                    <div style={{ fontWeight: 600, marginBottom: '6px' }}>{t('industries_title')}</div>
-                                                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                                                                                        {industries.map((d, didx) => (
-                                                                                            <span
-                                                                                                key={didx}
-                                                                                                onClick={() => d && triggerFollowupEntityQuery(d)}
-                                                                                                style={{ cursor: d ? 'pointer' : 'default', background: 'rgba(16,185,129,0.14)', border: '1px solid rgba(16,185,129,0.25)', padding: '4px 10px', borderRadius: '999px', opacity: 0.95 }}
-                                                                                            >
-                                                                                                {d}
-                                                                                            </span>
-                                                                                        ))}
-                                                                                    </div>
-                                                                                </div>
-                                                                            )}
-                                                                        </div>
-                                                                    );
-                                                                })()}
-
                                                                 {Array.isArray(msg.graph?.relations) && msg.graph.relations.length > 0 && (
                                                                     <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
                                                                         <div style={{ fontWeight: 600, fontSize: '12px', marginBottom: '6px' }}>{t('relations_title')}</div>
                                                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '12px' }}>
                                                                             {(expandedGraph[i] ? msg.graph.relations : msg.graph.relations.slice(0, 8)).map((r, ridx) => (
                                                                                 <div key={ridx} style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                                                                                    <span
-                                                                                        onClick={() => r?.source && triggerFollowupEntityQuery(r.source)}
-                                                                                        style={{ cursor: r?.source ? 'pointer' : 'default', textDecoration: r?.source ? 'underline' : 'none', textUnderlineOffset: 2 }}
-                                                                                    >
-                                                                                        {r?.source || ''}
-                                                                                    </span>
+                                                                                    <span>{r?.source || ''}</span>
                                                                                     <span style={{ background: 'rgba(99,102,241,0.18)', border: '1px solid rgba(99,102,241,0.35)', color: '#a5b4fc', padding: '1px 8px', borderRadius: '999px', fontSize: '11px' }}>
                                                                                         {r?.relation || ''}
                                                                                     </span>
-                                                                                    <span
-                                                                                        onClick={() => r?.target && triggerFollowupEntityQuery(r.target)}
-                                                                                        style={{ cursor: r?.target ? 'pointer' : 'default', textDecoration: r?.target ? 'underline' : 'none', textUnderlineOffset: 2, opacity: 0.95 }}
-                                                                                    >
-                                                                                        {r?.target || ''}
-                                                                                    </span>
+                                                                                    <span style={{ opacity: 0.95 }}>{r?.target || ''}</span>
                                                                                 </div>
                                                                             ))}
                                                                         </div>
@@ -845,42 +956,6 @@ const App = () => {
                                                     })()}
                                                 </div>
                                             )}
-                                            {msg.sources && msg.sources.length > 0 && (
-                                                <div className="sources-container" style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid rgba(255,255,255,0.1)', fontSize: '12px' }}>
-                                                    <div style={{ opacity: 0.6, marginBottom: '4px' }}>{t('knowledge_sources')}</div>
-                                                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                                                        {[...new Set(msg.sources.map(s => s.file))].map((file, idx) => (
-                                                            <span key={idx} className="source-tag" style={{ background: 'rgba(99, 102, 241, 0.2)', padding: '2px 8px', borderRadius: '4px', color: '#818cf8' }}>
-                                                                {file}
-                                                            </span>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            )}
-                                            {msg.pipeline_latency_ms && (
-                                                <div className="pipeline-latency" style={{ marginTop: '8px', paddingTop: '6px', borderTop: '1px solid rgba(255,255,255,0.08)', fontSize: '11px', opacity: 0.85, fontFamily: 'monospace' }}>
-                                                    ⏱ {[
-                                                        msg.pipeline_latency_ms.first_token_ms != null && `${t('first_token_short')} ${(msg.pipeline_latency_ms.first_token_ms / 1000).toFixed(1)}s`,
-                                                        `planner ${msg.pipeline_latency_ms.planner_ms ?? 0}ms`,
-                                                        `vector ${msg.pipeline_latency_ms.vector_retrieval_ms ?? 0}ms`,
-                                                        `graph ${msg.pipeline_latency_ms.graph_retrieval_ms ?? 0}ms`,
-                                                        `LLM ${((msg.pipeline_latency_ms.llm_generation_ms ?? 0) / 1000).toFixed(1)}s`,
-                                                        `${t('total_time_short')} ${((msg.pipeline_latency_ms.total_ms ?? 0) / 1000).toFixed(1)}s`,
-                                                    ].filter(Boolean).join(' · ')}
-                                                    {(msg.pipeline_latency_ms.prompt_chars != null || msg.pipeline_latency_ms.prompt_tokens != null) && (
-                                                        <div style={{ marginTop: '4px', opacity: 0.75 }}>
-                                                            {t('prompt_label')}: {msg.pipeline_latency_ms.prompt_chars ?? 0} {t('characters_unit')}{msg.pipeline_latency_ms.prompt_tokens != null ? ` · ~${msg.pipeline_latency_ms.prompt_tokens} ${t('tokens_unit')}` : ''}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            )}
-                                            {msg.role === 'assistant' && (
-                                                <div style={{ marginTop: '6px', fontSize: '11px', opacity: 0.8, fontFamily: 'monospace' }}>
-                                                    ⚡ {t('debug_context')}: {msg.debug?.context_tokens ?? 0}<br />
-                                                    🧠 {t('debug_graph_relations')}: {msg.graph?.count ?? 0}<br />
-                                                    📄 {t('debug_chunks_used')}: {msg.debug?.chunks_used ?? 0}
-                                                </div>
-                                            )}
                                         </div>
                                     </div>
                                 ))}
@@ -889,18 +964,49 @@ const App = () => {
                             </section>
                             <footer className="chat-footer">
                                 <div className="chat-controls">
-                                    <div className="mode-select glass" style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
-                                        <Search size={14} />
-                                        <span style={{ opacity: 0.8 }}>{t('query_mode') || '查询模式'}</span>
-                                        <select
-                                            value={queryMode}
-                                            onChange={(e) => setQueryMode(e.target.value)}
-                                            style={{ background: 'transparent', borderRadius: '6px', border: '1px solid rgba(148, 163, 184, 0.8)', padding: '2px 8px', fontSize: '12px', color: 'inherit' }}
+                                    {(selectedScopeDoc?.name || selectedScopeDoc?.file_name) ? (
+                                        <div
+                                            style={{
+                                                marginBottom: 8,
+                                                fontSize: 12,
+                                                opacity: 0.85,
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: 8,
+                                            }}
                                         >
-                                            <option value="vector">{t('mode_fast') || '快速（向量优先）'}</option>
-                                            <option value="hybrid">{t('mode_smart') || '智能（自动选择）'}</option>
-                                            <option value="graph">{t('mode_graph') || '图模式（关系更强）'}</option>
-                                        </select>
+                                            <span>📄 当前范围：{selectedScopeDoc?.name || selectedScopeDoc?.file_name}</span>
+                                            <button
+                                                type="button"
+                                                onClick={() => setSelectedScopeDoc(null)}
+                                                style={{
+                                                    border: 'none',
+                                                    background: 'transparent',
+                                                    color: '#94a3b8',
+                                                    cursor: 'pointer',
+                                                    textDecoration: 'underline',
+                                                }}
+                                            >
+                                                清除
+                                            </button>
+                                        </div>
+                                    ) : null}
+                                    <div className="mode-select glass" style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
+                                        <DocScopePicker
+                                            docs={scopeDocs}
+                                            onSelect={(doc) => {
+                                                setSelectedScopeDoc(doc || null);
+                                                const scopedDocId = resolveScopeDocId(doc);
+                                                if (scopedDocId) {
+                                                    logInsightEvent({
+                                                        event: 'select_doc_scope',
+                                                        doc_id: scopedDocId,
+                                                        payload: { doc_id: scopedDocId },
+                                                    });
+                                                }
+                                            }}
+                                        />
+                                        <span style={{ opacity: 0.75 }}>{t('search_single_turn_hint')}</span>
                                     </div>
                                     <form className="input-container glass" onSubmit={handleQuery}>
                                         <input value={query} onChange={e => setQuery(e.target.value)} placeholder={t('placeholder')} />

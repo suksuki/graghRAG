@@ -1,0 +1,73 @@
+/* v3-A：结构解释（与 GroundedInsightPanel 暗色体系一致，克制、非「裁判」语气） */
+
+.v3-explanation {
+    margin-top: 16px;
+    padding: 14px 16px;
+    border-radius: 12px;
+    border: 1px solid rgba(99, 102, 241, 0.28);
+    background: rgba(15, 23, 42, 0.55);
+}
+
+.v3-explanation__title {
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #64748b;
+    margin-bottom: 10px;
+}
+
+.v3-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.v3-explanation__header {
+    font-size: 13px;
+    line-height: 1.5;
+    color: #94a3b8;
+}
+
+.v3-explanation__comparison {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    align-items: flex-start;
+}
+
+.v3-explanation__group-col {
+    flex: 1 1 200px;
+    min-width: min(100%, 220px);
+    padding: 12px 14px;
+    border-radius: 10px;
+    border: 1px solid rgba(51, 65, 85, 0.65);
+    background: rgba(15, 23, 42, 0.45);
+}
+
+.v3-explanation__group-header {
+    font-size: 14px;
+    font-weight: 600;
+    color: #e2e8f0;
+    margin-bottom: 10px;
+}
+
+.v3-explanation__ref-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.v3-explanation__source-summary {
+    font-size: 11px;
+    line-height: 1.45;
+    color: #64748b;
+}
+
+.v3-explanation__meta-hint {
+    font-size: 11px;
+    line-height: 1.5;
+    color: #64748b;
+    margin-top: 4px;
+}

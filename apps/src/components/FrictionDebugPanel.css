@@ -1,0 +1,71 @@
+.friction-debug {
+    margin-top: 12px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px dashed rgba(148, 163, 184, 0.55);
+    background: rgba(15, 23, 42, 0.35);
+    font-size: 12px;
+    line-height: 1.45;
+    color: #cbd5e1;
+}
+
+.friction-debug__title {
+    font-weight: 600;
+    color: #94a3b8;
+    margin-bottom: 8px;
+    letter-spacing: 0.02em;
+}
+
+.friction-debug__row {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 4px;
+}
+
+.friction-debug__row--small {
+    opacity: 0.85;
+    font-size: 11px;
+}
+
+.friction-debug__k {
+    min-width: 72px;
+    color: #64748b;
+}
+
+.friction-debug__v {
+    color: #e2e8f0;
+    font-weight: 500;
+}
+
+.friction-debug__muted {
+    color: #64748b;
+}
+
+.friction-debug__err {
+    color: #f87171;
+    margin-bottom: 6px;
+}
+
+.friction-debug__pre {
+    margin: 8px 0 6px;
+    padding: 6px 8px;
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.25);
+    font-size: 10px;
+    overflow: auto;
+    max-height: 72px;
+}
+
+.friction-debug__btn {
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    border: 1px solid rgba(71, 85, 105, 0.8);
+    background: rgba(30, 41, 59, 0.8);
+    color: #e2e8f0;
+    cursor: pointer;
+}
+
+.friction-debug__btn:hover {
+    border-color: rgba(148, 163, 184, 0.6);
+}

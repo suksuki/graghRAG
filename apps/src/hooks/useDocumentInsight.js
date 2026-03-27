@@ -37,7 +37,13 @@ export function useDocumentInsight() {
                         'x-lang': i18n.language || 'zh',
                     },
                 });
-                setData(res.data);
+                const raw = res.data || {};
+                const normalizedAnswer = String(raw.answer ?? raw.summary ?? '');
+                setData({
+                    ...raw,
+                    answer: normalizedAnswer,
+                    summary: normalizedAnswer,
+                });
             } catch (e) {
                 setError(e);
                 setData(null);

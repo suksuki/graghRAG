@@ -1,12 +1,33 @@
-import React, { useMemo, useEffect, useState } from 'react';
+import React, { useMemo, useEffect, useState, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { Search, FileText, Loader2 } from 'lucide-react';
+import axios from 'axios';
+import { Search, FileText, Loader2, Paperclip, X } from 'lucide-react';
 import { useSearch } from '../hooks/useSearch';
 import { useDocumentInsight } from '../hooks/useDocumentInsight';
 import GroundedInsightPanel from '../components/GroundedInsightPanel';
 import GroundedFollowUpChips from '../components/GroundedFollowUpChips';
 import './SearchPage.css';
+
+const UPLOAD_ACCEPT = '.pdf,.docx,.doc,.pptx,.xlsx,.txt,.md,.html,.jpg,.jpeg,.png,.xdmp';
+
+async function pollIngestUntilDone(jobId) {
+    const max = 90;
+    for (let i = 0; i < max; i += 1) {
+        const { data } = await axios.get('/api/ingest/status', { params: { job_id: jobId } });
+        if (data.status === 'done') return;
+        if (data.status === 'failed') {
+            const err = data.error;
+            const msg =
+                (typeof err === 'object' && err && (err.message || err.detail)) ||
+                (typeof err === 'string' ? err : null) ||
+                'ingest failed';
+            throw new Error(String(msg));
+        }
+        await new Promise((r) => setTimeout(r, 2000));
+    }
+    throw new Error('timeout');
+}
 
 /**
  * 将 query 拆成词条，在 text 中高亮（不修改 API 字段，仅展示层）。
@@ -56,6 +77,11 @@ export default function SearchPage() {
     const [searchAnchorQuery, setSearchAnchorQuery] = useState('');
     /** 最近一次发给 Insight API 的 query：刷新摘要时与当前摘要一致。 */
     const [insightRunQuery, setInsightRunQuery] = useState('');
+    /** 有据摘要限定在单文档（file_name，与向量 metadata 一致）；来自上传，非「聊天会话」。 */
+    const [insightDocId, setInsightDocId] = useState(null);
+    const [uploadPhase, setUploadPhase] = useState('idle');
+    const [uploadError, setUploadError] = useState(null);
+    const fileInputRef = useRef(null);
 
     useEffect(() => {
         if (!query.trim()) {
@@ -65,6 +91,75 @@ export default function SearchPage() {
         }
     }, [query, resetInsight]);
 
+    const clearInsightDoc = useCallback(() => {
+        setInsightDocId(null);
+        setUploadError(null);
+        setUploadPhase('idle');
+        resetInsight();
+    }, [resetInsight]);
+
+    const onPickUpload = useCallback(() => {
+        setUploadError(null);
+        fileInputRef.current?.click();
+    }, []);
+
+    const onUploadFile = useCallback(
+        async (e) => {
+            const file = e.target.files?.[0];
+            e.target.value = '';
+            if (!file) return;
+            setUploadError(null);
+            setUploadPhase('uploading');
+            try {
+                const fd = new FormData();
+                fd.append('files', file, file.name);
+                const { data } = await axios.post('/api/upload', fd, {
+                    headers: { 'Content-Type': 'multipart/form-data' },
+                });
+                const fname =
+                    typeof data.filename === 'string'
+                        ? data.filename
+                        : Array.isArray(data.filename)
+                          ? data.filename[0]
+                          : data.files?.[0];
+                if (!fname) {
+                    throw new Error('no filename in response');
+                }
+                resetInsight();
+                if (data.status === 'completed') {
+                    setInsightDocId(fname);
+                    setUploadPhase('idle');
+                    return;
+                }
+                const jobId = data.jobs?.[0]?.job_id;
+                if (data.status === 'queued' && jobId) {
+                    setUploadPhase('ingesting');
+                    await pollIngestUntilDone(jobId);
+                    setInsightDocId(fname);
+                    setUploadPhase('idle');
+                    return;
+                }
+                setInsightDocId(fname);
+                setUploadPhase('idle');
+            } catch (err) {
+                const payload = err.response?.data;
+                const detail = payload?.detail;
+                const detailStr = Array.isArray(detail)
+                    ? detail.map((d) => d?.msg || d).join('; ')
+                    : detail;
+                const msg =
+                    payload?.message ||
+                    payload?.error?.message ||
+                    detailStr ||
+                    err.message ||
+                    'upload failed';
+                setUploadError(String(msg));
+                setUploadPhase('idle');
+            }
+        },
+        [resetInsight]
+    );
+
     const onSubmit = (e) => {
         e.preventDefault();
         const q = query.trim();
@@ -73,7 +168,7 @@ export default function SearchPage() {
         if (q) {
             setSearchAnchorQuery(q);
             setInsightRunQuery(q);
-            runInsight({ query: q, topK: 8 });
+            runInsight({ query: q, topK: 8, docId: insightDocId || undefined });
         }
     };
 
@@ -112,6 +207,29 @@ export default function SearchPage() {
             <p className="search-page__kicker">{t('search_page_kicker')}</p>
 
             <form className="search-page__form" onSubmit={onSubmit}>
+                <input
+                    ref={fileInputRef}
+                    type="file"
+                    className="search-page__file-input"
+                    accept={UPLOAD_ACCEPT}
+                    aria-hidden
+                    tabIndex={-1}
+                    onChange={onUploadFile}
+                />
+                <button
+                    type="button"
+                    className="search-page__attach"
+                    onClick={onPickUpload}
+                    disabled={uploadPhase === 'uploading' || uploadPhase === 'ingesting'}
+                    aria-label={t('search_upload_aria')}
+                    title={t('search_upload_aria')}
+                >
+                    {uploadPhase === 'uploading' || uploadPhase === 'ingesting' ? (
+                        <Loader2 className="spin" size={20} aria-hidden />
+                    ) : (
+                        <Paperclip size={20} aria-hidden />
+                    )}
+                </button>
                 <div className="search-page__input-wrap">
                     <Search size={22} aria-hidden />
                     <input
@@ -119,15 +237,54 @@ export default function SearchPage() {
                         type="search"
                         value={query}
                         onChange={(e) => setQuery(e.target.value)}
-                        placeholder={t('search_placeholder')}
+                        placeholder={
+                            insightDocId
+                                ? t('search_placeholder_scoped', { name: insightDocId })
+                                : t('search_placeholder')
+                        }
                         autoComplete="off"
-                        aria-label={t('search_placeholder')}
+                        aria-label={
+                            insightDocId
+                                ? t('search_placeholder_scoped', { name: insightDocId })
+                                : t('search_placeholder')
+                        }
                     />
                 </div>
                 <button className="search-page__submit" type="submit" disabled={loading || !query.trim()}>
                     {loading ? <Loader2 className="spin" size={20} /> : t('search_submit')}
                 </button>
             </form>
+
+            {uploadError ? (
+                <div className="search-page__upload-error" role="alert">
+                    {uploadError}
+                </div>
+            ) : null}
+
+            {uploadPhase === 'ingesting' ? (
+                <p className="search-page__scope-hint">{t('search_upload_processing')}</p>
+            ) : null}
+
+            {insightDocId && uploadPhase === 'idle' ? (
+                <div className="search-page__scope-bar">
+                    <span className="search-page__scope-bar-icon" aria-hidden>
+                        📄
+                    </span>
+                    <span className="search-page__scope-bar-text">
+                        {t('search_context_selected', { name: insightDocId })}
+                    </span>
+                    <button
+                        type="button"
+                        className="search-page__scope-clear"
+                        onClick={clearInsightDoc}
+                        aria-label={t('search_context_clear')}
+                    >
+                        <X size={16} aria-hidden />
+                        {t('search_context_clear')}
+                    </button>
+                </div>
+            ) : null}
+            <p className="search-page__single-turn-hint">{t('search_single_turn_hint')}</p>
 
             {query.trim() && (loading || insightLoading || insightData || insightError) ? (
                 <section className="search-page__grounded-section" aria-labelledby="search-grounded-heading">
@@ -142,7 +299,11 @@ export default function SearchPage() {
                                 disabled={insightLoading}
                                 onClick={() =>
                                     insightRunQuery.trim() &&
-                                    runInsight({ query: insightRunQuery.trim(), topK: 8 })
+                                    runInsight({
+                                        query: insightRunQuery.trim(),
+                                        topK: 8,
+                                        docId: insightDocId || undefined,
+                                    })
                                 }
                             >
                                 {insightLoading ? <Loader2 className="spin" size={18} aria-hidden /> : null}
@@ -150,7 +311,11 @@ export default function SearchPage() {
                             </button>
                         ) : null}
                     </div>
-                    <p className="search-page__grounded-hint">{t('grounded_insight_search_hint_auto')}</p>
+                    <p className="search-page__grounded-hint">
+                        {insightDocId
+                            ? t('grounded_insight_search_hint_scoped', { name: insightDocId })
+                            : t('grounded_insight_search_hint_auto')}
+                    </p>
                     {insightError ? (
                         <div className="search-page__error search-page__grounded-error" role="alert">
                             {t('grounded_insight_error')}
@@ -167,7 +332,10 @@ export default function SearchPage() {
                             summary={insightData.summary || ''}
                             supportingChunks={insightData.supporting_chunks || []}
                             insufficientEvidence={Boolean(insightData.insufficient_evidence)}
+                            decision={insightData.decision || null}
                             apiDebug={insightData.debug || null}
+                            telemetryDocId={insightDocId || '__search__'}
+                            telemetryInsightId={insightRunQuery.trim() || undefined}
                             onNavigateDocument={(fn, meta) =>
                                 navigate(`/docs/${encodeURIComponent(fn)}`, {
                                     state: {
@@ -186,7 +354,7 @@ export default function SearchPage() {
                                     disabled={insightLoading}
                                     onPick={(picked) => {
                                         setInsightRunQuery(picked);
-                                        runInsight({ query: picked, topK: 8 });
+                                        runInsight({ query: picked, topK: 8, docId: insightDocId || undefined });
                                     }}
                                 />
                             }

@@ -99,7 +99,10 @@ export default function InsightPage() {
                         summary={groundedData.summary || ''}
                         supportingChunks={groundedData.supporting_chunks || []}
                         insufficientEvidence={Boolean(groundedData.insufficient_evidence)}
+                        decision={groundedData.decision || null}
                         apiDebug={groundedData.debug || null}
+                        telemetryDocId="__insight__"
+                        telemetryInsightId={groundedQuery.trim() || undefined}
                         onNavigateDocument={(fn, meta) =>
                             navigate(`/docs/${encodeURIComponent(fn)}`, {
                                 state: {

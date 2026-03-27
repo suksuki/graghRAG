@@ -1,8 +1,26 @@
 ## GraphRAG 平台架构总览
 
+## ⚠️ Architecture Update (Important)
+
+本系统已从传统 RAG 架构升级为：
+
+👉 LLM-first Agentic Retrieval Architecture
+
+核心变化：
+
+- LLM 负责理解与决策
+- Retrieval（RAG）仅作为信息提供工具
+- 不再依赖 summary / selection / 规则式语义处理
+
+📄 新架构说明请参考：
+
+`docs/ARCHITECTURE_AGENTIC_RETRIEVAL.md`
+
+本文件（`ARCHITECTURE.md`）保留用于理解历史设计与演进路径。
+
 GraphRAG 平台围绕「**文档 → 知识图谱 + 向量库 → 检索 / 问答 / 洞察**」这一主线构建，整体可以分为以下层次：
 
-> **产品边界**：以文档智能为主、图为增强层，避免 Graph-first 倒置；见 [`DOCUMENT_INTELLIGENCE_POSITIONING.md`](./DOCUMENT_INTELLIGENCE_POSITIONING.md)。
+> **产品边界**：以文档智能为主、图为增强层，避免 Graph-first 倒置；见 [`DOCUMENT_INTELLIGENCE_POSITIONING.md`](./DOCUMENT_INTELLIGENCE_POSITIONING.md)、[`DOCUMENT_INTELLIGENCE_DESIGN_DISCIPLINE.md`](./DOCUMENT_INTELLIGENCE_DESIGN_DISCIPLINE.md)（证据 / 轻解释 / 判断分层纪律）。
 
 - **API 层（FastAPI）**：`api/main.py` + `api/routes/*`
 - **控制器层（Controllers）**：`api/controllers/*`
@@ -153,6 +171,7 @@ API 层本身**不包含业务逻辑**，只负责路由注册与基础健康检
 
 - `document_insight_controller.py`
   - 调用 `core/document_insight_service.py`：grounded 摘要（无 chunk 不调 LLM）、`supporting_chunks.ref_index` 与摘要 `[n]` 对齐、可选 `key_relations`（含 `kg_source` / `kg_confidence`）。
+  - 响应契约统一为 `answer + source + supporting_chunks`（`summary` 保留兼容，且与 `answer` 等价）。
 
 - `corpus_insight_controller.py`
   - 跨文档聚合 `di_*` 的语料级洞察（`POST /insights/corpus`）。

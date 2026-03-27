@@ -4,6 +4,26 @@
 
 ---
 
+## 2026-03（单路径契约收敛：Document Insight 响应统一）
+
+### 目标
+
+将文档中心与知识库 doc-scoped 问答对齐为同一能力契约，避免多入口返回结构分叉。
+
+### 变更
+
+- `POST /api/v1/insights/document` 响应增加 `answer` 字段（主字段）。
+- 保留 `summary` 作为兼容字段，并与 `answer` 保持等价。
+- `source` 语义收敛为 `rag` / `facts`，不再保留 `summary` / `selection` 作为问答来源语义。
+- 前端 `useDocumentInsight` 统一消费 `answer`（兼容回填 `summary`），确保多入口一致渲染。
+
+### 测试与文档
+
+- 更新 `tests/test_api.py`：新增 `answer` 存在与 `answer == summary` 断言，并校验 `source` 枚举。
+- 更新 `docs/API_REFERENCE.md`、`docs/TESTING.md`、`docs/ARCHITECTURE.md`、`docs/ARCHITECTURE_AGENTIC_RETRIEVAL.md` 契约描述。
+
+---
+
 ## 2026-03（文档智能产品层：知识库路径 + Hybrid + Grounded Insight）
 
 ### 目标

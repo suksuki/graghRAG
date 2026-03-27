@@ -178,13 +178,27 @@ class DocumentLoader:
 
     def _load_pptx(self, file_path: str) -> List[Document]:
         prs = Presentation(file_path)
-        texts: List[str] = []
-        for slide in prs.slides:
+        docs: List[Document] = []
+        base = self._base_metadata(file_path)
+        for idx, slide in enumerate(prs.slides, start=1):
+            texts: List[str] = []
             for shape in slide.shapes:
                 text = getattr(shape, "text", None)
                 if text:
                     texts.append(text)
-        return self._make_document("\n".join(texts), file_path)
+            content = "\n".join(texts).strip()
+            if not content:
+                continue
+            md = {
+                **base,
+                "page": idx,
+                "page_number": idx,
+                "chunk_id": f"slide_{idx}",
+            }
+            docs.append(Document(text=content, metadata=md))
+        if docs:
+            return docs
+        return self._make_document("", file_path)
 
     def _load_xlsx(self, file_path: str) -> List[Document]:
         wb = load_workbook(file_path, read_only=True, data_only=True)

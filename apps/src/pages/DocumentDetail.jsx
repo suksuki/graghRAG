@@ -265,8 +265,12 @@ export default function DocumentDetail({
 
                         {fromUpload ? (
                             <div className="document-detail__upload-guidance" role="status">
-                                <Sparkles size={16} aria-hidden style={{ flexShrink: 0, marginTop: 2, color: '#a5b4fc' }} />
-                                <span>{t('document_detail_upload_guidance')}</span>
+                                <Sparkles size={14} className="document-detail__upload-guidance-icon" aria-hidden />
+                                <span>
+                                    {groundedData && !groundedLoading
+                                        ? t('document_detail_upload_guidance_ready')
+                                        : t('document_detail_upload_guidance_progress')}
+                                </span>
                             </div>
                         ) : null}
 
@@ -310,7 +314,10 @@ export default function DocumentDetail({
                                         summary={groundedData.summary || ''}
                                         supportingChunks={groundedData.supporting_chunks || []}
                                         insufficientEvidence={Boolean(groundedData.insufficient_evidence)}
+                                        decision={groundedData.decision || null}
                                         apiDebug={groundedData.debug || null}
+                                        telemetryDocId={String(docId ?? '')}
+                                        telemetryInsightId={groundedQuery.trim() || undefined}
                                         onNavigateDocument={openDocument}
                                         currentDocId={docId}
                                         belowSummary={

@@ -340,15 +340,21 @@
 .document-detail__upload-guidance {
     display: flex;
     align-items: flex-start;
-    gap: 10px;
-    padding: 10px 14px;
-    margin-bottom: 14px;
-    border-radius: 10px;
-    border: 1px solid rgba(99, 102, 241, 0.28);
-    background: rgba(99, 102, 241, 0.08);
-    font-size: 13px;
-    line-height: 1.5;
-    color: #c7d2fe;
+    gap: 8px;
+    padding: 8px 12px;
+    margin-bottom: 12px;
+    border-radius: 8px;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    background: rgba(15, 23, 42, 0.28);
+    font-size: 12px;
+    line-height: 1.45;
+    color: rgba(148, 163, 184, 0.92);
+}
+
+.document-detail__upload-guidance-icon {
+    flex-shrink: 0;
+    margin-top: 1px;
+    color: rgba(148, 163, 184, 0.72);
 }
 
 /* 单文档有据摘要 */

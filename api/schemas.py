@@ -180,6 +180,62 @@ class HybridSearchResponse(BaseModel):
     )
 
 
+class EvidenceConflictItem(BaseModel):
+    """Decision v1：两条 supporting_chunks 之间启发式检出的可能冲突（非裁决）。"""
+
+    refs: List[int] = Field(
+        ...,
+        min_length=2,
+        max_length=2,
+        description="一对 ref_index，与摘要中 [n] 一致",
+    )
+    type: str = Field(
+        default="contradiction",
+        description="当前仅为 contradiction（关键词子串启发式）",
+    )
+
+
+class DocumentInsightDecision(BaseModel):
+    conflicts: List[EvidenceConflictItem] = Field(
+        default_factory=list,
+        description="未检出时为空列表",
+    )
+    support_groups: Optional[Dict[str, List[int]]] = Field(
+        None,
+        description="Decision v2：仅当 conflicts 非空时返回——按关键词粗分组的 ref_index；无冲突时为 null",
+    )
+
+
+class InsightEventIn(BaseModel):
+    """POST /log — 前端认知摩擦埋点（schema 可演进）。"""
+
+    event: str = Field(..., min_length=1, max_length=128)
+    ts: int
+    session_id: str = Field(..., min_length=1, max_length=160)
+    doc_id: str = ""
+    insight_id: Optional[str] = Field(None, max_length=256)
+    payload: Optional[Dict[str, Any]] = None
+
+
+class FrictionEvalRequest(BaseModel):
+    """POST /telemetry/friction-eval — 按 session（及可选 doc）拉取埋点并输出 v3 候选。"""
+
+    session_id: str = Field(..., min_length=1, max_length=160)
+    doc_id: Optional[str] = Field(None, max_length=512)
+    log_candidate: bool = Field(False, description="为 true 时若判定到摩擦则追加 friction_v3_candidates.jsonl")
+
+
+class FrictionEvalResponse(BaseModel):
+    friction_type: Optional[str] = Field(None, description="T1|T2|T3|T4|TB|TQ")
+    suggested_v3: Optional[str] = Field(None, description="A|B|C|D")
+    triggers_fired: List[str] = Field(default_factory=list)
+    counts: Dict[str, Any] = Field(default_factory=dict)
+    signals: Dict[str, Any] = Field(default_factory=dict)
+    event_count: int = 0
+    session_id: str = ""
+    doc_id: str = ""
+
+
 class DocumentInsightRequest(BaseModel):
     """
     POST /api/v1/insights/document — **DI-first**：摘要必须锚定在 `supporting_chunks`；
@@ -203,9 +259,17 @@ class DocumentInsightRequest(BaseModel):
 
 
 class DocumentInsightResponse(BaseModel):
+    answer: Optional[str] = Field(
+        None,
+        description="统一问答字段；与 summary 等价（向后兼容）。",
+    )
     summary: str = Field(
         ...,
         description="仅基于 supporting_chunks 的 grounded 摘要；证据不足时会明确说明。",
+    )
+    source: Optional[str] = Field(
+        None,
+        description="回答来源：rag（基于文档内容分析）或 facts（基于文档结构解析）。",
     )
     key_entities: List[str] = Field(default_factory=list)
     key_relations: List[DocRelationItem] = Field(
@@ -219,6 +283,10 @@ class DocumentInsightResponse(BaseModel):
     insufficient_evidence: bool = Field(
         False,
         description="为 true 表示未检索到片段或无法据此作答",
+    )
+    decision: DocumentInsightDecision = Field(
+        default_factory=DocumentInsightDecision,
+        description="Decision：冲突标记 + 可选 support_groups，见 docs/DOCUMENT_INTELLIGENCE_DESIGN_DISCIPLINE.md",
     )
     debug: Dict[str, Any] = Field(default_factory=dict)
 

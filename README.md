@@ -17,6 +17,8 @@ GraphRAG Platform 是一个面向中小企业的 **图谱 + 向量 + LLM** 知�
 
 **产品定位（文档智能 vs 行业图谱）**：图与向量如何分工、如何避免「图为主角」的架构倒置，见 [`docs/DOCUMENT_INTELLIGENCE_POSITIONING.md`](docs/DOCUMENT_INTELLIGENCE_POSITIONING.md)。
 
+**设计分层与 PR 自检**：证据 / 轻解释 / 判断三层纪律及涉 Insight、证据、可信度类改动的 PR 要求，见 [`docs/DOCUMENT_INTELLIGENCE_DESIGN_DISCIPLINE.md`](docs/DOCUMENT_INTELLIGENCE_DESIGN_DISCIPLINE.md)。*Design layers & PR enforcement: same link.*
+
 ## 技术栈
 
 | 组件     | 技术 |

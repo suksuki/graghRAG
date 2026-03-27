@@ -22,7 +22,7 @@
 
 - `GET /`：健康检查。
 - `GET /settings`：配置字段存在。
-- `POST /api/v1/insights/document`：`summary`、`supporting_chunks`（有条目时含 **`ref_index`**）、`key_relations`、`insufficient_evidence`。
+- `POST /api/v1/insights/document`：`answer`（且 `answer == summary` 兼容）、`source ∈ {rag,facts}`、`supporting_chunks`（有条目时含 **`ref_index`**）、`key_relations`、`insufficient_evidence`。
 - `POST /api/v1/hybrid-search`：`results`、`debug.vector_hits`、`debug.graph_edges`。
 - `GET /knowledge/docs`、`GET /knowledge/search`：知识库列表与搜索（**不得**使用根路径 `GET /docs`，与 Swagger 冲突）。
 - `POST /insights/corpus`：语料洞察响应字段完整。

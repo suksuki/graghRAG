@@ -13,6 +13,7 @@ from api.routes.knowledge_hub_routes import router as knowledge_hub_router
 from api.routes.insight_routes import router as insight_router
 from api.routes.hybrid_search_routes import router as hybrid_search_router
 from api.routes.document_insight_routes import router as document_insight_router
+from api.routes.telemetry_routes import router as telemetry_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -39,6 +40,7 @@ app.include_router(knowledge_hub_router)
 app.include_router(insight_router)
 app.include_router(hybrid_search_router)
 app.include_router(document_insight_router)
+app.include_router(telemetry_router)
 
 
 @app.get("/")

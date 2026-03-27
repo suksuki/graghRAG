@@ -53,11 +53,27 @@ def test_document_insight_endpoint(client):
     )
     assert response.status_code == 200
     data = response.json()
+    assert "answer" in data
     assert "summary" in data
     assert "key_entities" in data
     assert "key_relations" in data
     assert "supporting_chunks" in data
     assert "insufficient_evidence" in data
+    assert data["answer"] == data["summary"]
+    assert data.get("source") in ("rag", "facts", None)
+    assert "debug" in data
+    assert isinstance(data["debug"], dict)
+    assert "pre_filter_hits" in data["debug"]
+    assert "post_filter_hits" in data["debug"]
+    assert "final_used_chunks" in data["debug"]
+    assert "doc_scope_applied" in data["debug"]
+    assert "decision" in data
+    assert isinstance(data["decision"], dict)
+    assert "conflicts" in data["decision"]
+    assert isinstance(data["decision"]["conflicts"], list)
+    assert "support_groups" in data["decision"]
+    sg = data["decision"]["support_groups"]
+    assert sg is None or isinstance(sg, dict)
     assert isinstance(data["supporting_chunks"], list)
     for ch in data["supporting_chunks"]:
         assert "ref_index" in ch
@@ -95,6 +111,39 @@ def test_knowledge_hub_docs_list(client):
     data = response.json()
     assert "documents" in data
     assert isinstance(data["documents"], list)
+
+
+def test_insight_log_endpoint(client):
+    """POST /log 认知摩擦埋点：204，无 body。"""
+    r = client.post(
+        "/log",
+        json={
+            "event": "click_reference",
+            "ts": 1700000000000,
+            "session_id": "s_test_session",
+            "doc_id": "doc_a",
+            "insight_id": "q1",
+            "payload": {"ref_id": "1", "position": "summary"},
+        },
+    )
+    assert r.status_code == 204
+    assert r.content == b""
+
+
+def test_friction_eval_endpoint(client):
+    """POST /telemetry/friction-eval：结构正确（可无历史事件）。"""
+    r = client.post(
+        "/telemetry/friction-eval",
+        json={"session_id": "s_friction_smoke", "log_candidate": False},
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert "friction_type" in data
+    assert "suggested_v3" in data
+    assert "triggers_fired" in data
+    assert "counts" in data
+    assert "signals" in data
+    assert data.get("event_count") is not None
 
 
 def test_knowledge_hub_search(client):

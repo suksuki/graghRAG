@@ -40,7 +40,9 @@ def document_insight_controller(
     dbg = dict(raw.get("debug") or {})
     dbg["lang_final"] = lang_final
     return {
+        "answer": raw["summary"],
         "summary": raw["summary"],
+        "source": raw.get("source"),
         "key_entities": raw["key_entities"],
         "key_relations": rels,
         "supporting_chunks": raw["supporting_chunks"],

@@ -121,6 +121,36 @@
     transition: box-shadow 0.22s ease-out;
 }
 
+.relation-block {
+    margin: 0 0 12px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(99, 102, 241, 0.24);
+    background: rgba(30, 41, 59, 0.38);
+}
+
+.relation-block__title {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: #cbd5e1;
+    margin-bottom: 8px;
+}
+
+.relation-block__list {
+    margin: 0;
+    padding-left: 1.1em;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.relation-block__item {
+    color: #cbd5e1;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
 .grounded-insight__summary-wrap--enter {
     animation: grounded-summary-enter 0.22s ease-out;
 }
@@ -208,6 +238,73 @@
 
 .grounded-insight__below-summary {
     margin-bottom: 16px;
+}
+
+/* Decision v1：片段启发式冲突提示（非裁决，仅提醒对照） */
+.grounded-insight__decision-warning {
+    margin: 0 0 12px;
+    padding: 8px 11px;
+    border-radius: 8px;
+    font-size: 12px;
+    line-height: 1.45;
+    color: rgba(253, 224, 71, 0.95);
+    background: rgba(245, 158, 11, 0.07);
+    border: 1px solid rgba(251, 191, 36, 0.22);
+}
+
+/* Decision v2：冲突下的证据分桶（仅结构，不表示对错） */
+.grounded-insight__decision-groups {
+    margin: 0 0 14px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    background: rgba(15, 23, 42, 0.35);
+    font-size: 12px;
+    line-height: 1.5;
+    color: #cbd5e1;
+}
+
+.grounded-insight__decision-groups__row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px 10px;
+    margin-bottom: 8px;
+}
+
+.grounded-insight__decision-groups__row:last-child {
+    margin-bottom: 0;
+}
+
+.grounded-insight__decision-groups__label {
+    flex: 0 0 auto;
+    max-width: 100%;
+    font-weight: 600;
+    color: #94a3b8;
+}
+
+.grounded-insight__decision-groups__refs {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 2px;
+    min-width: 0;
+}
+
+.grounded-insight__ref--inline-group {
+    display: inline;
+    margin: 0 1px;
+}
+
+.grounded-insight__tooltip-conflict {
+    margin: 0 0 8px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    background: rgba(245, 158, 11, 0.1);
+    border-left: 2px solid rgba(251, 191, 36, 0.38);
+    font-size: 11px;
+    line-height: 1.45;
+    color: #fde68a;
 }
 
 .grounded-insight__ref {

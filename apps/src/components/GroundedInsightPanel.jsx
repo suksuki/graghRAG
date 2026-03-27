@@ -3,7 +3,25 @@ import { useTranslation } from 'react-i18next';
 import { Quote, X } from 'lucide-react';
 import { parseSummaryRefs } from '../utils/parseSummaryRefs';
 import { parseStructuredGroundedSummary } from '../utils/parseStructuredGroundedSummary';
+import { getInsightSessionId, logInsightEvent } from '../utils/insightEvents';
+import { useFrictionEval } from '../hooks/useFrictionEval';
+import FrictionDebugPanel, { isFrictionDebugEnabled } from './FrictionDebugPanel';
+import GroundedInlineRefButton from './GroundedInlineRefButton';
+import InsightRelationBlock from './InsightRelationBlock';
+import V3ExplanationPanel from './V3ExplanationPanel';
 import './GroundedInsightPanel.css';
+
+/** support_groups 内 ref 所属分组 key（用于埋点） */
+function refToGroupKey(ref, decision) {
+    const sg = decision?.support_groups;
+    if (!sg || typeof sg !== 'object') return null;
+    const r = Number(ref);
+    if (!Number.isFinite(r)) return null;
+    for (const [k, refs] of Object.entries(sg)) {
+        if (Array.isArray(refs) && refs.includes(r)) return k;
+    }
+    return null;
+}
 
 /** 同一句/同一条 bullet 内与其他引用共现：ref → 其余 ref_index 升序列表（长度≥2 才有条目） */
 function coCitationOthersByRef(parts) {
@@ -16,6 +34,20 @@ function coCitationOthersByRef(parts) {
     return m;
 }
 
+function pairCombosFromParts(parts) {
+    const refs = [...new Set(parts.filter((p) => p.type === 'ref').map((p) => Number(p.ref)).filter(Number.isFinite))].sort(
+        (a, b) => a - b
+    );
+    const out = [];
+    if (refs.length < 2) return out;
+    for (let i = 0; i < refs.length; i += 1) {
+        for (let j = i + 1; j < refs.length; j += 1) {
+            out.push([refs[i], refs[j]]);
+        }
+    }
+    return out;
+}
+
 /** 单段文本内 [n] 引用按钮（复用于整段摘要与结构化列表项） */
 function GroundedRefParts({
     parts,
@@ -25,6 +57,10 @@ function GroundedRefParts({
     rankByRef,
     topStarSlotByKey,
     activeRef,
+    conflictPartnersByRef,
+    telemetryDocId = '',
+    telemetryInsightId,
+    refClickPosition = 'summary',
     t,
     setTooltip,
     onRefClick,
@@ -69,17 +105,41 @@ function GroundedRefParts({
                         : undefined
                 }
                 aria-expanded={activeRef === p.ref}
-                onClick={() => onRefClick(p.ref)}
+                onClick={() => {
+                    logInsightEvent({
+                        event: 'click_reference',
+                        doc_id: telemetryDocId,
+                        insight_id: telemetryInsightId,
+                        payload: { ref_id: String(p.ref), position: refClickPosition },
+                    });
+                    onRefClick(p.ref);
+                }}
                 onMouseEnter={(e) => {
                     if (!ch) return;
                     cancelTooltipDismiss?.();
                     const siblings = coOthers.get(p.ref) || [];
+                    const conflictPartners = conflictPartnersByRef?.get?.(p.ref);
+                    const features = [];
+                    if (rank) features.push('rank');
+                    if (showTopMark) features.push('star');
+                    if (siblings.length) features.push('co_citation');
+                    if (Array.isArray(conflictPartners) && conflictPartners.length) features.push('conflict');
+                    logInsightEvent({
+                        event: 'hover_tooltip',
+                        doc_id: telemetryDocId,
+                        insight_id: telemetryInsightId,
+                        payload: { ref_id: String(p.ref), features },
+                    });
                     setTooltip({
                         ref: p.ref,
                         x: e.clientX + 12,
                         y: e.clientY + 16,
                         chunk: ch,
                         coCitationRefs: siblings.length > 0 ? siblings : undefined,
+                        conflictPartners:
+                            Array.isArray(conflictPartners) && conflictPartners.length > 0
+                                ? conflictPartners
+                                : undefined,
                     });
                 }}
                 onMouseMove={(e) => {
@@ -101,6 +161,18 @@ function GroundedRefParts({
     });
 }
 
+const DECISION_GROUP_ORDER = [
+    'increase',
+    'decrease',
+    'rise',
+    'fall',
+    'support',
+    'oppose',
+    'allow',
+    'forbid',
+    'other',
+];
+
 /**
  * 渲染有据摘要：summary 中 [n] 可 hover（tooltip）、click（高亮来源 + 右侧预览）、来源行可点击跳转文档。
  *
@@ -111,7 +183,10 @@ function GroundedRefParts({
  * @param {(fileName: string, meta?: { refIndex: number, snippet?: string }) => void} [props.onNavigateDocument] — 打开文档；meta 用于原文侧滚动对齐片段
  * @param {string} [props.currentDocId] — 当前正在查看的文件名；与其相同时隐藏「打开文档」（已在原文页）
  * @param {import('react').ReactNode} [props.belowSummary] — 插在摘要与来源双栏之间（如「继续探索」快捷问句）
+ * @param {{ conflicts?: Array<{ refs: number[], type?: string }>, support_groups?: Record<string, number[]>|null }|null} [props.decision] — Decision：冲突 + 可选 support_groups
  * @param {Record<string, unknown>|null} [props.apiDebug] — 开发环境展示 POST /insights/document 的 debug（生产勿传）
+ * @param {string} [props.telemetryDocId] — 埋点 doc 上下文（文档页为 `docId`；无文档场景可用 `__insight__` / `__search__`）
+ * @param {string} [props.telemetryInsightId] — 可选：本次问题/检索词（与 doc_id 组合区分会话）
  */
 export default function GroundedInsightPanel({
     summary,
@@ -120,6 +195,9 @@ export default function GroundedInsightPanel({
     onNavigateDocument,
     currentDocId,
     belowSummary = null,
+    decision = null,
+    telemetryDocId = '',
+    telemetryInsightId,
     apiDebug = null,
 }) {
     const { t } = useTranslation();
@@ -135,6 +213,19 @@ export default function GroundedInsightPanel({
     const previewColRef = useRef(null);
     const sourcesColRef = useRef(null);
     const tooltipLeaveTimerRef = useRef(null);
+    const summaryDwellRef = useRef(null);
+    const conflictDwellRef = useRef(null);
+    const groupsDwellRef = useRef(null);
+    const prevGroupForActiveRef = useRef(null);
+    const viewedGroupKeysRef = useRef(new Set());
+
+    const frictionDebugOn = isFrictionDebugEnabled();
+    const [sessionIdForFriction] = useState(() => getInsightSessionId());
+    const frictionEval = useFrictionEval({
+        enabled: frictionDebugOn,
+        sessionId: sessionIdForFriction,
+        docId: telemetryDocId || '',
+    });
 
     const cancelTooltipDismiss = useCallback(() => {
         if (tooltipLeaveTimerRef.current != null) {
@@ -191,6 +282,139 @@ export default function GroundedInsightPanel({
         list.sort((a, b) => (a.ref_index || 0) - (b.ref_index || 0));
         return list;
     }, [supportingChunks]);
+
+    /** ref_index → 与其启发式冲突的其它 ref（升序，用于 tooltip） */
+    const conflictPartnersByRef = useMemo(() => {
+        const m = new Map();
+        const raw = decision?.conflicts;
+        if (!Array.isArray(raw)) return m;
+        raw.forEach((c) => {
+            const refs = c?.refs;
+            if (!Array.isArray(refs) || refs.length !== 2) return;
+            const a = Number(refs[0]);
+            const b = Number(refs[1]);
+            if (!Number.isFinite(a) || !Number.isFinite(b) || a === b) return;
+            if (!m.has(a)) m.set(a, []);
+            if (!m.has(b)) m.set(b, []);
+            m.get(a).push(b);
+            m.get(b).push(a);
+        });
+        m.forEach((arr, k) => {
+            m.set(k, [...new Set(arr)].sort((x, y) => x - y));
+        });
+        return m;
+    }, [decision]);
+
+    const hasConflictEvidence = (decision?.conflicts?.length ?? 0) > 0;
+
+    const supportGroupRows = useMemo(() => {
+        const sg = decision?.support_groups;
+        if (!sg || typeof sg !== 'object') return [];
+        const rows = [];
+        DECISION_GROUP_ORDER.forEach((k) => {
+            const refs = sg[k];
+            if (Array.isArray(refs) && refs.length > 0) {
+                rows.push([k, [...refs].sort((a, b) => a - b)]);
+            }
+        });
+        Object.keys(sg).forEach((k) => {
+            if (DECISION_GROUP_ORDER.includes(k)) return;
+            const refs = sg[k];
+            if (Array.isArray(refs) && refs.length > 0) {
+                rows.push([k, [...refs].sort((a, b) => a - b)]);
+            }
+        });
+        // 若至少有一组含 2+ 条 ref，则隐藏「单 ref」组，减轻噪音；若全部为单 ref（典型 1 vs 1），仍全部展示
+        const hasMultiRefGroup = rows.some(([, refs]) => refs.length >= 2);
+        if (hasMultiRefGroup) {
+            return rows.filter(([, refs]) => refs.length >= 2);
+        }
+        return rows;
+    }, [decision]);
+
+    const hasSupportStructure = supportGroupRows.length > 0;
+
+    const showV3A =
+        frictionDebugOn &&
+        frictionEval.data?.suggested_v3 === 'A' &&
+        supportGroupRows.length > 0;
+
+    useEffect(() => {
+        viewedGroupKeysRef.current = new Set();
+        prevGroupForActiveRef.current = null;
+    }, [summary]);
+
+    useEffect(() => {
+        if (activeRef == null) {
+            prevGroupForActiveRef.current = null;
+            return;
+        }
+        const g = refToGroupKey(activeRef, decision);
+        const prev = prevGroupForActiveRef.current;
+        if (prev != null && g != null && prev !== g) {
+            logInsightEvent({
+                event: 'switch_conflict_group',
+                doc_id: telemetryDocId,
+                insight_id: telemetryInsightId,
+                payload: { from_group: prev, to_group: g },
+            });
+        }
+        prevGroupForActiveRef.current = g;
+    }, [activeRef, decision, telemetryDocId, telemetryInsightId]);
+
+    useEffect(() => {
+        supportGroupRows.forEach(([k, refs]) => {
+            if (viewedGroupKeysRef.current.has(k)) return;
+            viewedGroupKeysRef.current.add(k);
+            logInsightEvent({
+                event: 'view_support_group',
+                doc_id: telemetryDocId,
+                insight_id: telemetryInsightId,
+                payload: { group_id: k, ref_count: refs.length },
+            });
+        });
+    }, [supportGroupRows, telemetryDocId, telemetryInsightId]);
+
+    useEffect(() => {
+        const nodes = [
+            [summaryDwellRef.current, 'summary'],
+            [hasConflictEvidence ? conflictDwellRef.current : null, 'conflict'],
+            [hasSupportStructure ? groupsDwellRef.current : null, 'group'],
+        ].filter(([el]) => el);
+        if (!nodes.length) return undefined;
+        const starts = new Map();
+        const obs = new IntersectionObserver(
+            (entries) => {
+                entries.forEach((en) => {
+                    const section = en.target.dataset.dwellSection;
+                    if (!section) return;
+                    if (en.isIntersecting) {
+                        starts.set(section, Date.now());
+                    } else {
+                        const t0 = starts.get(section);
+                        if (t0) {
+                            const duration_ms = Date.now() - t0;
+                            if (duration_ms >= 800) {
+                                logInsightEvent({
+                                    event: 'dwell_time',
+                                    doc_id: telemetryDocId,
+                                    insight_id: telemetryInsightId,
+                                    payload: { section, duration_ms },
+                                });
+                            }
+                            starts.delete(section);
+                        }
+                    }
+                });
+            },
+            { threshold: 0.12, rootMargin: '0px' }
+        );
+        nodes.forEach(([el, section]) => {
+            el.dataset.dwellSection = section;
+            obs.observe(el);
+        });
+        return () => obs.disconnect();
+    }, [hasConflictEvidence, hasSupportStructure, summary, telemetryDocId, telemetryInsightId]);
 
     /** 本批片段内按 score 排序的位次 + 归一化权重（用于视觉强弱，不改变 [n] 与摘要顺序） */
     const retrievalRanking = useMemo(() => {
@@ -321,6 +545,54 @@ export default function GroundedInsightPanel({
         [parsedSummary]
     );
 
+    const relationConflictPairs = useMemo(() => {
+        const raw = decision?.conflicts;
+        if (!Array.isArray(raw)) return [];
+        const seen = new Set();
+        const out = [];
+        raw.forEach((c) => {
+            const refs = Array.isArray(c?.refs) ? c.refs : [];
+            for (let i = 0; i < refs.length; i += 1) {
+                for (let j = i + 1; j < refs.length; j += 1) {
+                    const a = Number(refs[i]);
+                    const b = Number(refs[j]);
+                    if (!Number.isFinite(a) || !Number.isFinite(b) || a === b) continue;
+                    const x = Math.min(a, b);
+                    const y = Math.max(a, b);
+                    const k = `${x}-${y}`;
+                    if (seen.has(k)) continue;
+                    seen.add(k);
+                    out.push([x, y]);
+                }
+            }
+        });
+        return out;
+    }, [decision]);
+
+    const relationCoCitationPairs = useMemo(() => {
+        const seen = new Set();
+        const out = [];
+        const pushPairs = (pairs) => {
+            pairs.forEach(([a, b]) => {
+                const k = `${a}-${b}`;
+                if (seen.has(k)) return;
+                seen.add(k);
+                out.push([a, b]);
+            });
+        };
+        if (parsedSummary.mode === 'structured') {
+            parsedSummary.sections.forEach((sec) => {
+                sec.bullets.forEach((bullet) => {
+                    pushPairs(pairCombosFromParts(parseSummaryRefs(bullet)));
+                });
+            });
+        } else {
+            pushPairs(pairCombosFromParts(flatParts));
+        }
+        const conflictKeys = new Set(relationConflictPairs.map(([a, b]) => `${a}-${b}`));
+        return out.filter(([a, b]) => !conflictKeys.has(`${a}-${b}`));
+    }, [parsedSummary, flatParts, relationConflictPairs]);
+
     /** 纯文本摘要：若存在首次 top ★，整块左侧弱强调（无语义列表时） */
     const plainHasFirstTopAnchor = useMemo(() => {
         if (parsedSummary.mode !== 'plain') return false;
@@ -385,6 +657,10 @@ export default function GroundedInsightPanel({
             rankByRef: retrievalRanking.rankByRef,
             topStarSlotByKey,
             activeRef,
+            conflictPartnersByRef,
+            telemetryDocId,
+            telemetryInsightId,
+            refClickPosition: 'summary',
             t,
             setTooltip,
             onRefClick,
@@ -396,10 +672,42 @@ export default function GroundedInsightPanel({
             retrievalRanking.rankByRef,
             topStarSlotByKey,
             activeRef,
+            conflictPartnersByRef,
+            telemetryDocId,
+            telemetryInsightId,
             t,
             onRefClick,
             cancelTooltipDismiss,
             scheduleTooltipDismissFromRef,
+        ]
+    );
+
+    const v3RefsProps = useMemo(
+        () => ({
+            chunkByRef,
+            rankByRef: retrievalRanking.rankByRef,
+            activeRef,
+            conflictPartnersByRef,
+            telemetryDocId,
+            telemetryInsightId,
+            setTooltip,
+            onRefClick,
+            cancelTooltipDismiss,
+            scheduleTooltipDismissFromRef,
+            t,
+        }),
+        [
+            chunkByRef,
+            retrievalRanking.rankByRef,
+            activeRef,
+            conflictPartnersByRef,
+            telemetryDocId,
+            telemetryInsightId,
+            setTooltip,
+            onRefClick,
+            cancelTooltipDismiss,
+            scheduleTooltipDismissFromRef,
+            t,
         ]
     );
 
@@ -445,6 +753,7 @@ export default function GroundedInsightPanel({
             ) : null}
 
             <div
+                ref={summaryDwellRef}
                 className={`grounded-insight__summary-wrap${summaryAnimClass ? ` ${summaryAnimClass}` : ''}`}
                 aria-label={t('grounded_insight_summary_label')}
             >
@@ -495,7 +804,67 @@ export default function GroundedInsightPanel({
                 )}
             </div>
 
+            <InsightRelationBlock
+                conflicts={relationConflictPairs}
+                coCitationPairs={relationCoCitationPairs}
+                onRefClick={onRefClick}
+                telemetryDocId={telemetryDocId}
+                telemetryInsightId={telemetryInsightId}
+            />
+
+            {hasConflictEvidence ? (
+                <div ref={conflictDwellRef} className="grounded-insight__decision-warning" role="status">
+                    {t('grounded_insight_conflict_warning')}
+                </div>
+            ) : null}
+
+            {hasSupportStructure ? (
+                <div
+                    ref={groupsDwellRef}
+                    className="grounded-insight__decision-groups"
+                    role="region"
+                    aria-label={t('grounded_insight_decision_groups_aria')}
+                >
+                    {supportGroupRows.map(([groupKey, refs]) => (
+                        <div key={groupKey} className="grounded-insight__decision-groups__row">
+                            <span className="grounded-insight__decision-groups__label">
+                                {t(`decision_group_${groupKey}`, { defaultValue: groupKey })}
+                            </span>
+                            <span className="grounded-insight__decision-groups__refs">
+                                {refs.map((r) => (
+                                    <GroundedInlineRefButton
+                                        key={`sg-${groupKey}-${r}`}
+                                        refNum={r}
+                                        chunkByRef={chunkByRef}
+                                        rankByRef={retrievalRanking.rankByRef}
+                                        activeRef={activeRef}
+                                        conflictPartnersByRef={conflictPartnersByRef}
+                                        telemetryDocId={telemetryDocId}
+                                        telemetryInsightId={telemetryInsightId}
+                                        setTooltip={setTooltip}
+                                        onRefClick={onRefClick}
+                                        cancelTooltipDismiss={cancelTooltipDismiss}
+                                        scheduleTooltipDismissFromRef={scheduleTooltipDismissFromRef}
+                                        t={t}
+                                    />
+                                ))}
+                            </span>
+                        </div>
+                    ))}
+                </div>
+            ) : null}
+
             {belowSummary ? <div className="grounded-insight__below-summary">{belowSummary}</div> : null}
+
+            {showV3A ? (
+                <V3ExplanationPanel
+                    type="A"
+                    groupRows={supportGroupRows}
+                    signals={frictionEval.data?.signals}
+                    refsProps={v3RefsProps}
+                    chunkByRef={chunkByRef}
+                />
+            ) : null}
 
             {sortedSources.length > 0 && (
                 <>
@@ -704,6 +1073,13 @@ export default function GroundedInsightPanel({
                                         {t('grounded_insight_score_short', { score: tooltip.chunk.score.toFixed(3) })}
                                     </div>
                                 ) : null}
+                                {Array.isArray(tooltip.conflictPartners) && tooltip.conflictPartners.length > 0 ? (
+                                    <p className="grounded-insight__tooltip-conflict" role="note">
+                                        {t('grounded_insight_conflict_tooltip', {
+                                            refs: tooltip.conflictPartners.map((r) => `[${r}]`).join(', '),
+                                        })}
+                                    </p>
+                                ) : null}
                                 {Array.isArray(tooltip.coCitationRefs) && tooltip.coCitationRefs.length > 0 ? (
                                     <>
                                         <p className="grounded-insight__tooltip-co-citation" role="note">
@@ -762,7 +1138,9 @@ export default function GroundedInsightPanel({
                                             ) : null}
                                         </p>
                                         <p className="grounded-insight__tooltip-reasoning-hint" role="note">
-                                            {t('grounded_insight_tooltip_reasoning_joint_hint')}
+                                            {tooltip.coCitationRefs.length >= 2
+                                                ? t('grounded_insight_tooltip_multi_aligned_sources')
+                                                : t('grounded_insight_tooltip_reasoning_joint_hint')}
                                         </p>
                                     </>
                                 ) : null}
@@ -789,6 +1167,8 @@ export default function GroundedInsightPanel({
                     <pre className="grounded-insight__dev-debug-pre">{JSON.stringify(apiDebug, null, 2)}</pre>
                 </details>
             ) : null}
+
+            {frictionDebugOn ? <FrictionDebugPanel evalResult={frictionEval} /> : null}
         </div>
     );
 }

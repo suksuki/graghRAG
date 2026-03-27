@@ -23,6 +23,10 @@ from core.document_intelligence import (
     chunks_text_for_intelligence,
     extract_document_intelligence,
 )
+from core.person_entity_store import (
+    extract_person_entities_from_text,
+    upsert_person_entities,
+)
 from core.graph_engine import GraphEngine
 from core.vector_store import VectorEngine
 from configs.config import settings
@@ -214,6 +218,35 @@ class SMEIngestor:
                 logger.info("Document intelligence applied for %s", fname)
             except Exception as e:  # noqa: BLE001
                 logger.warning("Document intelligence skipped for %s: %s", fname, e)
+
+        # ── 2c. Person Entities（最小结构：person/title/projects/source_doc）────────
+        for fname in new_for_vector:
+            sample = chunks_text_for_intelligence(all_nodes, fname, max_chunks=6)
+            if not sample.strip():
+                continue
+            try:
+                logger.info(
+                    "[PersonExtract] input_head file=%s text=%s",
+                    fname,
+                    sample[:200].replace("\n", " "),
+                )
+                entities = extract_person_entities_from_text(
+                    text=sample,
+                    llm=self.graph_engine.llm,
+                    file_name=fname,
+                )
+                logger.info("[PersonExtract] result_json file=%s rows=%s", fname, entities)
+                inserted_rows = 0
+                if entities:
+                    inserted_rows = upsert_person_entities(fname, entities)
+                    logger.info("Person entities upserted for %s: %s", fname, inserted_rows)
+                logger.info(
+                    "[PersonExtract] inserted_rows file=%s inserted_rows=%s",
+                    fname,
+                    inserted_rows,
+                )
+            except Exception as e:  # noqa: BLE001
+                logger.warning("Person entities skipped for %s: %s", fname, e)
 
         # ── 3. 向量写入（只处理新文件的 nodes）──────────────────────
         vector_nodes = [

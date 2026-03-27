@@ -59,3 +59,9 @@ Any Graph-first feature must:
 > 换一批完全不同领域的文档，同一套摄取与检索逻辑是否仍能工作？
 
 若答案为「是」，则仍落在 **Document Intelligence + Graph 增强** 的正道上。
+
+---
+
+## 相关文档
+
+- **[Document Intelligence 设计分层纪律](./DOCUMENT_INTELLIGENCE_DESIGN_DISCIPLINE.md)**：Evidence / Reasoning / Decision 分层、禁止项与需求评审三问（与本文档同为防跑偏约束）。
