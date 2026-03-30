@@ -46,6 +46,8 @@ def document_insight_controller(
         "key_entities": raw["key_entities"],
         "key_relations": rels,
         "supporting_chunks": raw["supporting_chunks"],
+        "structured_evidence": raw.get("structured_evidence") or [],
         "insufficient_evidence": raw["insufficient_evidence"],
+        "decision": raw.get("decision") or {"conflicts": [], "support_groups": None},
         "debug": dbg,
     }

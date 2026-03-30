@@ -240,6 +240,87 @@
     margin-bottom: 16px;
 }
 
+.structured-evidence {
+    margin: 0 0 12px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(99, 102, 241, 0.24);
+    background: rgba(30, 41, 59, 0.38);
+}
+
+.structured-evidence__title {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: #cbd5e1;
+    margin-bottom: 4px;
+}
+
+.structured-evidence__hint {
+    margin: 0 0 8px;
+    font-size: 12px;
+    line-height: 1.45;
+    color: #94a3b8;
+}
+
+.structured-evidence__list {
+    margin: 0;
+    padding-left: 1.1em;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.structured-evidence__item {
+    color: #cbd5e1;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.structured-evidence__line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 2px;
+}
+
+.structured-evidence__role {
+    font-weight: 600;
+}
+
+.structured-evidence__sep {
+    color: #94a3b8;
+}
+
+.structured-evidence__meta {
+    margin-top: 6px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.structured-evidence__refs {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.structured-evidence__files {
+    font-size: 12px;
+    color: #94a3b8;
+}
+
+.structured-evidence__open {
+    border: none;
+    background: transparent;
+    color: #93c5fd;
+    cursor: pointer;
+    padding: 0;
+    font-size: 12px;
+    text-decoration: underline;
+}
+
 /* Decision v1：片段启发式冲突提示（非裁决，仅提醒对照） */
 .grounded-insight__decision-warning {
     margin: 0 0 12px;

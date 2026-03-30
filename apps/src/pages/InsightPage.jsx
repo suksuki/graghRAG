@@ -98,6 +98,7 @@ export default function InsightPage() {
                     <GroundedInsightPanel
                         summary={groundedData.summary || ''}
                         supportingChunks={groundedData.supporting_chunks || []}
+                        structuredEvidence={groundedData.structured_evidence || []}
                         insufficientEvidence={Boolean(groundedData.insufficient_evidence)}
                         decision={groundedData.decision || null}
                         apiDebug={groundedData.debug || null}

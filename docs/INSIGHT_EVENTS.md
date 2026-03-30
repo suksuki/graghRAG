@@ -46,6 +46,8 @@ WHERE event = 'dwell_time' GROUP BY 1;
 | `view_support_group` | 某分组行首次进入视图 |
 | `dwell_time` | `payload.section`, `duration_ms` |
 | `user_question` | 预留（如后续接输入框） |
+| `select_doc_scope` | 选择某个文档作为范围；`payload.doc_id` |
+| `query_with_doc_scope` | 在文档范围内发起查询；`payload.query_len` |
 | `query_submitted` | 提交问题；`payload.query_len`, `has_doc_scope`, `doc_id` |
 | `answer_generated` | LLM 返回答案；`payload.source`（`rag`/`facts`）, `answer_len`, `contains_not_found`, `semantic_expansion_used` |
 | `follow_up_query` | 同一 session 30 秒内再次提问；`payload.prev_query_len`, `new_query_len` |
@@ -177,7 +179,143 @@ SELECT
 FROM insight_events;
 ```
 
-### 2) 追问率（session 口径）
+## 系统验证期每日指标 SQL（Observation Mode）
+
+### 1) click_rate（证据点击率）
+
+```sql
+SELECT
+  COUNT(*) FILTER (WHERE event = 'click_reference') * 1.0
+  / NULLIF(COUNT(*) FILTER (WHERE event = 'query_submitted'), 0) AS click_rate
+FROM insight_events;
+```
+
+### 2) follow_up_rate（追问率，30 秒窗口）
+
+```sql
+WITH q AS (
+  SELECT session_id, to_timestamp(ts / 1000.0) AS created_at
+  FROM insight_events
+  WHERE event = 'query_submitted'
+),
+pairs AS (
+  SELECT q1.session_id
+  FROM q q1
+  JOIN q q2
+    ON q1.session_id = q2.session_id
+   AND q2.created_at > q1.created_at
+   AND q2.created_at <= q1.created_at + interval '30 seconds'
+)
+SELECT
+  COUNT(DISTINCT session_id) * 1.0
+  / NULLIF((SELECT COUNT(DISTINCT session_id) FROM q), 0) AS follow_up_rate
+FROM pairs;
+```
+
+### 3) not_found_rate（未命中率）
+
+```sql
+SELECT
+  COUNT(*) FILTER (
+    WHERE event = 'answer_generated'
+      AND payload->>'contains_not_found' = 'true'
+  ) * 1.0
+  / NULLIF(COUNT(*) FILTER (WHERE event = 'answer_generated'), 0) AS not_found_rate
+FROM insight_events;
+```
+
+### 4) semantic_expansion_rate（语义扩展率）
+
+```sql
+SELECT
+  COUNT(*) FILTER (
+    WHERE event = 'answer_generated'
+      AND payload->>'semantic_expansion_used' = 'true'
+  ) * 1.0
+  / NULLIF(COUNT(*) FILTER (WHERE event = 'answer_generated'), 0) AS semantic_expansion_rate
+FROM insight_events;
+```
+
+### 5) doc_scope_selection_to_query_rate（选择后转化率）
+
+```sql
+WITH selections AS (
+  SELECT
+    session_id,
+    doc_id,
+    ts,
+    LEAD(ts) OVER (PARTITION BY session_id ORDER BY ts ASC) AS next_select_ts
+  FROM insight_events
+  WHERE event = 'select_doc_scope'
+),
+converted_selections AS (
+  SELECT COUNT(*) AS converted_count
+  FROM selections s
+  WHERE EXISTS (
+    SELECT 1
+    FROM insight_events q
+    WHERE q.event = 'query_with_doc_scope'
+      AND q.session_id = s.session_id
+      AND COALESCE(q.doc_id, '') = COALESCE(s.doc_id, '')
+      AND q.ts > s.ts
+      AND (s.next_select_ts IS NULL OR q.ts < s.next_select_ts)
+  )
+)
+SELECT
+  (SELECT converted_count * 1.0 FROM converted_selections)
+  / NULLIF(COUNT(*) FILTER (WHERE event = 'select_doc_scope'), 0)
+  AS doc_scope_selection_to_query_rate
+FROM insight_events;
+```
+
+### 6) scoped_vs_global_query_window_click_rate（查询窗口口径）
+
+```sql
+WITH query_events AS (
+  SELECT
+    session_id,
+    ts,
+    CASE
+      WHEN event = 'query_with_doc_scope' THEN true
+      WHEN event = 'query_submitted' AND (payload->>'has_doc_scope') = 'true' THEN true
+      ELSE false
+    END AS is_scoped
+  FROM insight_events
+  WHERE event IN ('query_submitted', 'query_with_doc_scope')
+),
+queries AS (
+  SELECT
+    session_id,
+    ts AS query_ts,
+    BOOL_OR(is_scoped) AS is_scoped,
+    LEAD(ts) OVER (PARTITION BY session_id ORDER BY ts ASC) AS next_query_ts
+  FROM query_events
+  GROUP BY session_id, ts
+),
+attributed AS (
+  SELECT
+    q.session_id,
+    q.query_ts,
+    q.is_scoped,
+    EXISTS (
+      SELECT 1
+      FROM insight_events c
+      WHERE c.event = 'click_reference'
+        AND c.session_id = q.session_id
+        AND c.ts > q.query_ts
+        AND (q.next_query_ts IS NULL OR c.ts < q.next_query_ts)
+    ) AS clicked
+  FROM queries q
+)
+SELECT
+  COUNT(*) FILTER (WHERE is_scoped AND clicked) * 1.0
+    / NULLIF(COUNT(*) FILTER (WHERE is_scoped), 0) AS scoped_query_window_click_rate,
+  COUNT(*) FILTER (WHERE NOT is_scoped AND clicked) * 1.0
+    / NULLIF(COUNT(*) FILTER (WHERE NOT is_scoped), 0) AS global_query_window_click_rate
+FROM attributed;
+```
+
+### 补充参考口径 A) 追问率（session 口径）
 
 ```sql
 SELECT
@@ -187,7 +325,7 @@ SELECT
 FROM insight_events;
 ```
 
-### 3) 未命中率（answer 口径）
+### 补充参考口径 B) 未命中率（answer 口径）
 
 ```sql
 SELECT

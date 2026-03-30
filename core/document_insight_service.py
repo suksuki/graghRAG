@@ -163,6 +163,7 @@ _TEAM_QUERY_HINTS: Tuple[str, ...] = (
     "市场",
 )
 _PPT_SUFFIXES: Tuple[str, ...] = (".ppt", ".pptx")
+_STRUCTURED_LINE_REGEX = re.compile(r"^\s*([^()（）\n]+?)\s*[(（]\s*([^()（）\n]+?)\s*[)）]\s*$")
 
 
 def _node_score(nws: Any) -> float:
@@ -212,6 +213,58 @@ def _collect_key_entities(nodes_with_scores: List[Any]) -> List[str]:
                 seen.add(n)
                 out.append(n)
     return out[:40]
+
+
+def _extract_structured_evidence(
+    supporting: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """
+    从 supporting_chunks 中提取结构化预览项，并保留 provenance。
+    这是保守的展示辅助，不是新的事实来源。
+    """
+    grouped: Dict[Tuple[str, Tuple[str, ...]], Dict[str, Any]] = {}
+    for ch in supporting or []:
+        text = str(ch.get("chunk_text") or ch.get("snippet") or "").strip()
+        if not text:
+            continue
+        ref_index = ch.get("ref_index")
+        try:
+            ref_num = int(ref_index)
+        except (TypeError, ValueError):
+            ref_num = None
+        file_name = str(ch.get("file_name") or "").strip()
+        for line in text.splitlines():
+            m = _STRUCTURED_LINE_REGEX.match(line)
+            if not m:
+                continue
+            role = str(m.group(1) or "").strip()
+            persons = tuple(
+                p.strip()
+                for p in re.split(r"[、,，]", str(m.group(2) or "").strip())
+                if p.strip()
+            )
+            if not role or not persons:
+                continue
+            key = (role, persons)
+            row = grouped.setdefault(
+                key,
+                {
+                    "role": role,
+                    "persons": list(persons),
+                    "ref_indices": [],
+                    "file_names": [],
+                },
+            )
+            if ref_num is not None and ref_num not in row["ref_indices"]:
+                row["ref_indices"].append(ref_num)
+            if file_name and file_name not in row["file_names"]:
+                row["file_names"].append(file_name)
+    rows = list(grouped.values())
+    for row in rows:
+        row["ref_indices"].sort()
+        row["file_names"].sort()
+    rows.sort(key=lambda item: (item["ref_indices"][0] if item["ref_indices"] else 10**9, item["role"]))
+    return rows
 
 
 def _retrieve_doc_scoped(
@@ -777,12 +830,31 @@ def run_document_insight(
                         }
                     )
                 summary = _summary_from_person_rows(person_rows, lang)
+                structured_evidence = []
+                for item in supporting:
+                    snippet = str(item.get("snippet") or "")
+                    match = re.match(r"person=([^;]+);\s*title=([^;]+);", snippet)
+                    if not match:
+                        continue
+                    person = str(match.group(1) or "").strip()
+                    title = str(match.group(2) or "").strip()
+                    if not person or not title or title == "null":
+                        continue
+                    structured_evidence.append(
+                        {
+                            "role": title,
+                            "persons": [person],
+                            "ref_indices": [int(item["ref_index"])],
+                            "file_names": [str(item.get("file_name") or doc_filter)],
+                        }
+                    )
                 return {
                     "summary": summary,
                     "source": "facts",
                     "key_entities": [str(r.get("person") or "") for r in person_rows][:30],
                     "key_relations": [],
                     "supporting_chunks": supporting,
+                    "structured_evidence": structured_evidence,
                     "insufficient_evidence": False,
                     "decision": {
                         "conflicts": [],
@@ -929,6 +1001,7 @@ def run_document_insight(
                 "id": cid,
                 "ref_index": ref_idx,
                 "file_name": fn if fn else None,
+                "chunk_text": text,
                 "snippet": snip,
                 "score": round(sc, 4),
             }
@@ -980,6 +1053,7 @@ def run_document_insight(
     support_groups: Optional[Dict[str, List[int]]] = (
         build_support_groups(supporting) if conflicts else None
     )
+    structured_evidence = _extract_structured_evidence(supporting)
 
     return {
         "summary": summary,
@@ -987,6 +1061,7 @@ def run_document_insight(
         "key_entities": key_entities[:30],
         "key_relations": key_relations,
         "supporting_chunks": supporting,
+        "structured_evidence": structured_evidence,
         "insufficient_evidence": insufficient,
         "decision": {
             "conflicts": conflicts,

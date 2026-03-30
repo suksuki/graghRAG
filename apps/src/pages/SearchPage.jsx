@@ -331,6 +331,7 @@ export default function SearchPage() {
                         <GroundedInsightPanel
                             summary={insightData.summary || ''}
                             supportingChunks={insightData.supporting_chunks || []}
+                            structuredEvidence={insightData.structured_evidence || []}
                             insufficientEvidence={Boolean(insightData.insufficient_evidence)}
                             decision={insightData.decision || null}
                             apiDebug={insightData.debug || null}

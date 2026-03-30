@@ -30,47 +30,84 @@ FROM insight_events;
 
 结果：`_____`
 
-### 2) Scope 转化率（选择 -> 使用）
+### 2) Scope 选择后转化率（选择 -> scoped query）
 
 ```sql
+WITH selections AS (
+  SELECT
+    session_id,
+    doc_id,
+    ts,
+    LEAD(ts) OVER (PARTITION BY session_id ORDER BY ts ASC) AS next_select_ts
+  FROM insight_events
+  WHERE event = 'select_doc_scope'
+),
+converted_selections AS (
+  SELECT COUNT(*) AS converted_count
+  FROM selections s
+  WHERE EXISTS (
+    SELECT 1
+    FROM insight_events q
+    WHERE q.event = 'query_with_doc_scope'
+      AND q.session_id = s.session_id
+      AND COALESCE(q.doc_id, '') = COALESCE(s.doc_id, '')
+      AND q.ts > s.ts
+      AND (s.next_select_ts IS NULL OR q.ts < s.next_select_ts)
+  )
+)
 SELECT
-  COUNT(*) FILTER (WHERE event = 'query_with_doc_scope') * 1.0
+  (SELECT converted_count * 1.0 FROM converted_selections)
   / NULLIF(COUNT(*) FILTER (WHERE event = 'select_doc_scope'), 0)
 FROM insight_events;
 ```
 
 结果：`_____`
 
-### 3) 证据点击率（Scoped vs Global）
+### 3) 查询窗口证据点击率（Scoped vs Global）
 
 ```sql
-WITH scoped AS (
-  SELECT session_id
+WITH query_events AS (
+  SELECT
+    session_id,
+    ts,
+    CASE
+      WHEN event = 'query_with_doc_scope' THEN true
+      WHEN event = 'query_submitted' AND (payload->>'has_doc_scope') = 'true' THEN true
+      ELSE false
+    END AS is_scoped
   FROM insight_events
-  WHERE event = 'query_with_doc_scope'
+  WHERE event IN ('query_submitted', 'query_with_doc_scope')
 ),
-global AS (
-  SELECT session_id
-  FROM insight_events
-  WHERE event = 'query_submitted'
-    AND (payload->>'has_doc_scope') = 'false'
+queries AS (
+  SELECT
+    session_id,
+    ts AS query_ts,
+    BOOL_OR(is_scoped) AS is_scoped,
+    LEAD(ts) OVER (PARTITION BY session_id ORDER BY ts ASC) AS next_query_ts
+  FROM query_events
+  GROUP BY session_id, ts
 ),
-clicks AS (
-  SELECT session_id
-  FROM insight_events
-  WHERE event = 'click_reference'
+attributed AS (
+  SELECT
+    q.session_id,
+    q.query_ts,
+    q.is_scoped,
+    EXISTS (
+      SELECT 1
+      FROM insight_events c
+      WHERE c.event = 'click_reference'
+        AND c.session_id = q.session_id
+        AND c.ts > q.query_ts
+        AND (q.next_query_ts IS NULL OR c.ts < q.next_query_ts)
+    ) AS clicked
+  FROM queries q
 )
 SELECT
-  'scoped' AS type,
-  COUNT(DISTINCT c.session_id) * 1.0 / NULLIF(COUNT(DISTINCT s.session_id), 0) AS click_rate
-FROM scoped s
-LEFT JOIN clicks c USING (session_id)
-UNION ALL
-SELECT
-  'global' AS type,
-  COUNT(DISTINCT c.session_id) * 1.0 / NULLIF(COUNT(DISTINCT g.session_id), 0) AS click_rate
-FROM global g
-LEFT JOIN clicks c USING (session_id);
+  COUNT(*) FILTER (WHERE is_scoped AND clicked) * 1.0
+    / NULLIF(COUNT(*) FILTER (WHERE is_scoped), 0) AS scoped_query_window_click_rate,
+  COUNT(*) FILTER (WHERE NOT is_scoped AND clicked) * 1.0
+    / NULLIF(COUNT(*) FILTER (WHERE NOT is_scoped), 0) AS global_query_window_click_rate
+FROM attributed;
 ```
 
 scoped：`_____`  
@@ -212,3 +249,34 @@ _____
 - 中：允许 L1/L2，不允许 L3/L4
 - 高：允许按分级执行（含 L3/L4）
 
+<!-- AUTO_WEEKLY_REPORT:START -->
+## 自动周报（最近 7 天）
+
+- 生成日期：`2026-03-30`
+- 样本量（session）：`2`
+- 采样门槛：`query_submitted>=50 && session>=20 && real_user_ratio>=0.8`
+- 就绪状态：`false`
+
+```json
+{
+  "total_queries": 30,
+  "total_sessions": 2,
+  "real_user_ratio": 1.0,
+  "ready_for_decision": false,
+  "click_rate": 0.03333333333333333,
+  "follow_up_rate": 1.0,
+  "not_found_rate": 0.0,
+  "semantic_expansion_rate": 0.0
+}
+```
+
+### 核心指标
+- Doc Scope 使用率：`0.3667`
+- Scope 选择后转化率（select -> scoped query）：`2.7500`
+- scoped 查询窗口点击率：`1.0000`
+- global 查询窗口点击率：`0.5000`
+
+### Session 行为路径（5 条）
+- Session #1: `query_len=18 -> answer_len=188 -> click=yes -> q2_len=none`
+- Session #2: `query_len=22 -> answer_len=146 -> click=no -> q2_len=none`
+<!-- AUTO_WEEKLY_REPORT:END -->

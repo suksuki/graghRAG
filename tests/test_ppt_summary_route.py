@@ -112,3 +112,40 @@ def test_planner_parse_failure_falls_back_defaults(monkeypatch):
     assert out["source"] == "rag"
     assert out["source"] in {"rag", "facts"}
     assert out["debug"]["planner_need_retrieval"] is True
+
+
+def test_structured_evidence_includes_provenance(monkeypatch):
+    node = SimpleNamespace(
+        text="项目经理（张三, 李四）\n该文档描述团队协作方式。",
+        metadata={"file_name": "demo.pptx", "entities": ["项目团队"]},
+        id_="c-structured-1",
+    )
+    monkeypatch.setattr(
+        dis,
+        "_retrieve_doc_scoped",
+        lambda **kwargs: [SimpleNamespace(node=node, score=0.9)],
+    )
+    llm = _DummyLLM(
+        [
+            '{"need_retrieval": true, "focus": "职责", "intent": "summary"}',
+            "文档列出了项目经理职责。[1]",
+        ]
+    )
+    out = dis.run_document_insight(
+        vector_engine=_DummyVector([SimpleNamespace(node=node, score=0.9)]),
+        graph_driver=SimpleNamespace(),
+        llm=llm,
+        query="谁是项目经理？",
+        top_k=5,
+        doc_id="demo.pptx",
+        include_graph_relations=False,
+        lang="zh",
+    )
+    assert out["structured_evidence"] == [
+        {
+            "role": "项目经理",
+            "persons": ["张三", "李四"],
+            "ref_indices": [1],
+            "file_names": ["demo.pptx"],
+        }
+    ]

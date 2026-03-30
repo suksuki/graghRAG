@@ -376,6 +376,7 @@ curl -s -X POST http://localhost:8000/api/v1/hybrid-search \
 - `summary`：兼容字段（与 `answer` 保持一致）；LLM 在**严格仅用 SOURCES** 的提示下生成；无片段时返回固定说明，不杜撰。有片段时提示模型在陈述后附加 **`[1]`、`[2]`** 等引用号，与下方 `ref_index` 对齐，便于前端高亮。
 - `source`：仅允许 `rag`（基于文档内容分析）或 `facts`（基于文档结构解析）。
 - `supporting_chunks`：`id`、`**ref_index**`（与摘要引用号一致）、`file_name`、`snippet`、`score`。
+- `structured_evidence`：服务端从 `supporting_chunks` 或 `facts` 保守提取的结构化预览，含 `role`、`persons`、`ref_indices`、`file_names`；用于 UI 预览，不替代原始片段证据。
 - `key_entities`：来自召回 chunk 的 metadata 实体。
 - `key_relations`：`source` / `relation` / `target`，以及 **`kg_source`**、**`kg_confidence`**（与摄取侧一致，标明辅助信号质量）；**不得**当作可脱离片段独立采信的主证据。
 - `insufficient_evidence`：未检索到可用片段时为 `true`。
@@ -413,4 +414,3 @@ curl -s -X POST http://localhost:8000/api/v1/insights/document \
 - `docs/OPTIMIZATION_LLM_LATENCY.md`
 - `docs/DEPLOYMENT.md`
 - `docs/CHANGELOG.md`
-

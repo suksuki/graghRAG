@@ -258,6 +258,22 @@ class DocumentInsightRequest(BaseModel):
     )
 
 
+class DocumentStructuredEvidenceItem(BaseModel):
+    role: str = Field(..., description="结构化预览中的角色/职能名。")
+    persons: List[str] = Field(
+        default_factory=list,
+        description="与该角色关联的人名列表。",
+    )
+    ref_indices: List[int] = Field(
+        default_factory=list,
+        description="支撑该预览项的 supporting_chunks.ref_index 列表。",
+    )
+    file_names: List[str] = Field(
+        default_factory=list,
+        description="支撑该预览项的来源文件名列表。",
+    )
+
+
 class DocumentInsightResponse(BaseModel):
     answer: Optional[str] = Field(
         None,
@@ -280,6 +296,10 @@ class DocumentInsightResponse(BaseModel):
         default_factory=list,
         description="向量检索片段；含 ref_index 与摘要中 [1]、[2] 引用一一对应。",
     )
+    structured_evidence: List[DocumentStructuredEvidenceItem] = Field(
+        default_factory=list,
+        description="结构化预览项；由服务端从 supporting_chunks/facts 保守提取，并附带 provenance。",
+    )
     insufficient_evidence: bool = Field(
         False,
         description="为 true 表示未检索到片段或无法据此作答",
@@ -299,4 +319,3 @@ class CorpusInsightResponse(BaseModel):
     closing_takeaway: str = Field("", description="置于关键洞察末尾的一句话总结，便于记忆")
     top_keywords: List[str] = []
     docs_analyzed: int = Field(0, description="实际参与聚合的、含 di_* 的文档数")
-

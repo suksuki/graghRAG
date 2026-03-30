@@ -300,6 +300,8 @@
         "grounded_insight_search_hint": "摘要仅使用检索到的文档片段作为依据；点击摘要中的 [1]、[2] 可对照来源，「打开文档」跳转原文。",
         "grounded_insight_regenerate": "按下方问题重新生成",
         "grounded_insight_error": "有据摘要请求失败，请稍后重试。",
+        "structured_evidence_title": "片段解析结构预览",
+        "structured_evidence_hint": "仅供预览。该列表由检索片段启发式解析生成，暂未提供引用跳转。",
         "grounded_insight_sources_heading": "来源",
         "grounded_insight_preview_heading": "片段预览",
         "grounded_insight_preview_hint": "点击摘要中的编号，或左侧来源卡片主体，查看完整片段。",

@@ -9,6 +9,7 @@ import FrictionDebugPanel, { isFrictionDebugEnabled } from './FrictionDebugPanel
 import GroundedInlineRefButton from './GroundedInlineRefButton';
 import InsightRelationBlock from './InsightRelationBlock';
 import V3ExplanationPanel from './V3ExplanationPanel';
+import StructuredEvidenceBlock from './StructuredEvidenceBlock';
 import './GroundedInsightPanel.css';
 
 /** support_groups 内 ref 所属分组 key（用于埋点） */
@@ -179,6 +180,7 @@ const DECISION_GROUP_ORDER = [
  * @param {object} props
  * @param {string} props.summary
  * @param {Array<object>} props.supportingChunks — API supporting_chunks（含 ref_index）
+ * @param {Array<object>} [props.structuredEvidence] — API structured_evidence（带 ref/file provenance）
  * @param {boolean} [props.insufficientEvidence]
  * @param {(fileName: string, meta?: { refIndex: number, snippet?: string }) => void} [props.onNavigateDocument] — 打开文档；meta 用于原文侧滚动对齐片段
  * @param {string} [props.currentDocId] — 当前正在查看的文件名；与其相同时隐藏「打开文档」（已在原文页）
@@ -191,6 +193,7 @@ const DECISION_GROUP_ORDER = [
 export default function GroundedInsightPanel({
     summary,
     supportingChunks,
+    structuredEvidence = [],
     insufficientEvidence = false,
     onNavigateDocument,
     currentDocId,
@@ -803,6 +806,15 @@ export default function GroundedInsightPanel({
                     </div>
                 )}
             </div>
+
+            <StructuredEvidenceBlock
+                structuredEvidence={structuredEvidence}
+                chunkByRef={chunkByRef}
+                activeRef={activeRef}
+                onRefClick={onRefClick}
+                onNavigateDocument={onNavigateDocument}
+                currentDocId={currentDocId}
+            />
 
             <InsightRelationBlock
                 conflicts={relationConflictPairs}

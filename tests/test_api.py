@@ -58,6 +58,7 @@ def test_document_insight_endpoint(client):
     assert "key_entities" in data
     assert "key_relations" in data
     assert "supporting_chunks" in data
+    assert "structured_evidence" in data
     assert "insufficient_evidence" in data
     assert data["answer"] == data["summary"]
     assert data.get("source") in ("rag", "facts", None)
@@ -75,9 +76,15 @@ def test_document_insight_endpoint(client):
     sg = data["decision"]["support_groups"]
     assert sg is None or isinstance(sg, dict)
     assert isinstance(data["supporting_chunks"], list)
+    assert isinstance(data["structured_evidence"], list)
     for ch in data["supporting_chunks"]:
         assert "ref_index" in ch
         assert isinstance(ch["ref_index"], int)
+    for row in data["structured_evidence"]:
+        assert "role" in row
+        assert "persons" in row
+        assert "ref_indices" in row
+        assert "file_names" in row
     for rel in data["key_relations"]:
         assert rel.get("source")
         assert rel.get("relation")
