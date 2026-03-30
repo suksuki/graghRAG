@@ -22,7 +22,7 @@
 
 - `GET /`：健康检查。
 - `GET /settings`：配置字段存在。
-- `POST /api/v1/insights/document`：`answer`（且 `answer == summary` 兼容）、`source ∈ {rag,facts}`、`supporting_chunks`（有条目时含 **`ref_index`**）、`structured_evidence`（若存在需带 provenance）、`key_relations`、`insufficient_evidence`。
+- `POST /api/v1/insights/document`：`answer`（且 `answer == summary` 兼容）、`source ∈ {rag,facts}`、`supporting_chunks`（有条目时含 **`ref_index`**）、`structured_evidence`（若存在需带 `role/persons/ref_indices/file_names` provenance）、`decision`、`key_relations`、`insufficient_evidence`。
 - `POST /api/v1/hybrid-search`：`results`、`debug.vector_hits`、`debug.graph_edges`。
 - `GET /knowledge/docs`、`GET /knowledge/search`：知识库列表与搜索（**不得**使用根路径 `GET /docs`，与 Swagger 冲突）。
 - `POST /insights/corpus`：语料洞察响应字段完整。
@@ -229,12 +229,12 @@ pytest -v tests/test_integration.py
 
 ```bash
 PYTHONPATH=. python3 -m pytest -v -ra
-# 预期：43 passed（随用例增加而变化，以本地命令输出为准）
+# 预期：以本地命令输出为准；用例数量会随仓库演进变化
 ```
 
 ---
 
-## 6. CI 自动化
+## 5. CI 自动化
 
 仓库已新增 GitHub Actions 工作流：`.github/workflows/tests.yml`。
 
@@ -253,7 +253,7 @@ PYTHONPATH=. python3 -m pytest -v -ra
 
 ---
 
-## 5. 注意事项
+## 6. 注意事项
 
 - 集成测试依赖外部服务，若任一服务（Ollama / Neo4j / PostgreSQL / Redis）未启动，测试将失败。
 - 若你在本地频繁调试，建议：

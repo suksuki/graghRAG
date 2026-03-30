@@ -62,7 +62,6 @@ def test_agentic_rag_path_returns_rag_source(monkeypatch):
         lang="zh",
     )
     assert out["source"] == "rag"
-    assert out["source"] in {"rag", "facts"}
     assert out["debug"]["planner_focus"] == "流程"
     assert len(out["supporting_chunks"]) == 1
 
@@ -86,7 +85,6 @@ def test_agentic_retrieval_uses_query_plus_focus(monkeypatch):
         lang="zh",
     )
     assert out["source"] == "rag"
-    assert out["source"] in {"rag", "facts"}
     assert out["debug"]["planner_focus"] == "团队职责"
     assert out["debug"]["planner_intent"] == "reasoning"
 
@@ -110,7 +108,6 @@ def test_planner_parse_failure_falls_back_defaults(monkeypatch):
         lang="zh",
     )
     assert out["source"] == "rag"
-    assert out["source"] in {"rag", "facts"}
     assert out["debug"]["planner_need_retrieval"] is True
 
 
