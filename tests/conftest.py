@@ -4,7 +4,6 @@ import psycopg2
 import pytest
 
 from configs.config import settings
-from api.deps import graph_engine, vector_engine
 
 
 # 标记需真实 Ollama/Neo4j/Postgres 的测试，CI 可仅运行单元测试: pytest -m "not integration"
@@ -20,6 +19,8 @@ def clean_test_environment(request):
     if request.node.get_closest_marker("integration") is None:
         yield
         return
+
+    from api.deps import graph_engine, vector_engine
 
     # A. 清理 Neo4j 图
     try:

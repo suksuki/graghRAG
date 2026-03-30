@@ -1,9 +1,9 @@
 import pytest
 from fastapi.testclient import TestClient
+import httpx
+
 from api.main import app
 from configs.config import settings
-import httpx
-import logging
 
 @pytest.fixture
 def client():
