@@ -1,6 +1,5 @@
 {
   "scripts": {
-    "browser:task": "node browser_task.mjs",
     "ui:insight-structured": "node ui_insight_structured.mjs",
     "ui:insight-empty": "node ui_insight_empty.mjs",
     "ui:insight-i18n": "node ui_insight_i18n.mjs"
