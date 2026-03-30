@@ -1,13 +1,79 @@
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 import httpx
-
-from api.main import app
 from configs.config import settings
+
+
+def _mock_document_insight_payload():
+    return {
+        "answer": "Architecture overview summary.",
+        "summary": "Architecture overview summary.",
+        "source": "rag",
+        "key_entities": ["GraphRAG"],
+        "key_relations": [
+            {"source": "GraphRAG", "relation": "uses", "target": "PGVector"}
+        ],
+        "supporting_chunks": [
+            {
+                "ref_index": 1,
+                "file_name": "architecture.md",
+                "snippet": "GraphRAG uses PGVector for chunk retrieval.",
+            }
+        ],
+        "structured_evidence": [
+            {
+                "role": "Architecture",
+                "persons": ["Platform team"],
+                "ref_indices": [1],
+                "file_names": ["architecture.md"],
+            }
+        ],
+        "insufficient_evidence": False,
+        "decision": {"conflicts": [], "support_groups": None},
+        "debug": {
+            "pre_filter_hits": 1,
+            "post_filter_hits": 1,
+            "final_used_chunks": 1,
+            "doc_scope_applied": False,
+        },
+    }
+
+
+def _mock_hybrid_search_payload():
+    return {
+        "query": "integration test hybrid",
+        "results": [
+            {
+                "type": "chunk",
+                "text": "Hybrid search returns vector-backed text evidence.",
+                "score": 0.92,
+            }
+        ],
+        "debug": {
+            "vector_hits": 1,
+            "graph_edges": 0,
+            "graph_nodes": 0,
+        },
+    }
+
 
 @pytest.fixture
 def client():
+    from api.main import app
+
     return TestClient(app)
+
+
+@pytest.fixture
+def contract_client():
+    from api.routes.document_insight_routes import router as document_insight_router
+    from api.routes.hybrid_search_routes import router as hybrid_search_router
+
+    contract_app = FastAPI()
+    contract_app.include_router(document_insight_router)
+    contract_app.include_router(hybrid_search_router)
+    return TestClient(contract_app)
 
 
 @pytest.mark.integration
@@ -45,9 +111,13 @@ def test_api_ping(client):
     assert response.json()["status"] == "online"
 
 
-def test_document_insight_endpoint(client):
-    """POST /api/v1/insights/document 结构正确（可无向量命中）。"""
-    response = client.post(
+def test_document_insight_endpoint(contract_client, monkeypatch):
+    """POST /api/v1/insights/document 走 route + response_model 契约。"""
+    monkeypatch.setattr(
+        "api.routes.document_insight_routes._get_document_insight_controller",
+        lambda: (lambda body, ui_lang=None: _mock_document_insight_payload()),
+    )
+    response = contract_client.post(
         "/api/v1/insights/document",
         json={"query": "architecture overview", "top_k": 3},
     )
@@ -91,9 +161,13 @@ def test_document_insight_endpoint(client):
         assert rel.get("target")
 
 
-def test_hybrid_search_endpoint(client):
-    """POST /api/v1/hybrid-search 结构正确（无向量/图数据时也可 200）。"""
-    response = client.post(
+def test_hybrid_search_endpoint(contract_client, monkeypatch):
+    """POST /api/v1/hybrid-search 走 route + response_model 契约。"""
+    monkeypatch.setattr(
+        "api.routes.hybrid_search_routes._get_hybrid_search_controller",
+        lambda: (lambda body: _mock_hybrid_search_payload()),
+    )
+    response = contract_client.post(
         "/api/v1/hybrid-search",
         json={
             "query": "integration test hybrid",
