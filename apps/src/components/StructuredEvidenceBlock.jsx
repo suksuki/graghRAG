@@ -56,7 +56,11 @@ export default function StructuredEvidenceBlock({
                             </div>
                             <div className="structured-evidence__meta">
                                 {refs.length ? (
-                                    <div className="structured-evidence__refs">
+                                    <div className="structured-evidence__meta-group structured-evidence__meta-group--refs">
+                                        <span className="structured-evidence__meta-label">
+                                            {t('structured_evidence_refs_label')}
+                                        </span>
+                                        <div className="structured-evidence__refs">
                                         {refs.map((ref) => (
                                             <button
                                                 key={ref}
@@ -73,12 +77,16 @@ export default function StructuredEvidenceBlock({
                                                 [{ref}]
                                             </button>
                                         ))}
+                                        </div>
                                     </div>
                                 ) : null}
                                 {fileNames.length ? (
-                                    <span className="structured-evidence__files">
-                                        {fileNames.join(personJoiner)}
-                                    </span>
+                                    <div className="structured-evidence__meta-group structured-evidence__meta-group--files">
+                                        <span className="structured-evidence__meta-label">
+                                            {t('structured_evidence_source_label')}
+                                        </span>
+                                        <span className="structured-evidence__files">{fileNames.join(personJoiner)}</span>
+                                    </div>
                                 ) : null}
                                 {canOpenDocument ? (
                                     <button

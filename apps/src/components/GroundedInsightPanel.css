@@ -242,10 +242,13 @@
 
 .structured-evidence {
     margin: 0 0 12px;
-    padding: 10px 12px;
-    border-radius: 10px;
-    border: 1px solid rgba(99, 102, 241, 0.24);
-    background: rgba(30, 41, 59, 0.38);
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px solid rgba(99, 102, 241, 0.2);
+    background:
+        linear-gradient(180deg, rgba(37, 99, 235, 0.08), rgba(15, 23, 42, 0.28)),
+        rgba(30, 41, 59, 0.44);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .structured-evidence__title {
@@ -265,16 +268,21 @@
 
 .structured-evidence__list {
     margin: 0;
-    padding-left: 1.1em;
+    padding-left: 0;
+    list-style: none;
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 10px;
 }
 
 .structured-evidence__item {
     color: #cbd5e1;
     font-size: 13px;
     line-height: 1.5;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(148, 163, 184, 0.12);
+    background: rgba(15, 23, 42, 0.34);
 }
 
 .structured-evidence__line {
@@ -296,8 +304,27 @@
     margin-top: 6px;
     display: flex;
     flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 8px 10px;
+}
+
+.structured-evidence__meta-group {
+    display: inline-flex;
     align-items: center;
-    gap: 8px;
+    flex-wrap: wrap;
+    gap: 6px;
+    min-width: 0;
+}
+
+.structured-evidence__meta-label {
+    padding: 2px 6px;
+    border-radius: 999px;
+    background: rgba(51, 65, 85, 0.78);
+    color: #94a3b8;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
 }
 
 .structured-evidence__refs {
@@ -312,13 +339,42 @@
 }
 
 .structured-evidence__open {
-    border: none;
-    background: transparent;
+    border: 1px solid rgba(96, 165, 250, 0.28);
+    background: rgba(30, 41, 59, 0.62);
     color: #93c5fd;
     cursor: pointer;
-    padding: 0;
+    padding: 4px 9px;
+    border-radius: 999px;
     font-size: 12px;
-    text-decoration: underline;
+    line-height: 1.2;
+    transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.structured-evidence__open:hover,
+.structured-evidence__open:focus-visible {
+    background: rgba(30, 64, 175, 0.24);
+    border-color: rgba(147, 197, 253, 0.52);
+    color: #dbeafe;
+    outline: none;
+}
+
+@media (max-width: 640px) {
+    .structured-evidence {
+        padding: 12px;
+    }
+
+    .structured-evidence__item {
+        padding: 9px 10px;
+    }
+
+    .structured-evidence__meta {
+        gap: 8px;
+    }
+
+    .structured-evidence__open {
+        width: 100%;
+        justify-content: center;
+    }
 }
 
 /* Decision v1：片段启发式冲突提示（非裁决，仅提醒对照） */

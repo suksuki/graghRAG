@@ -302,6 +302,8 @@
         "grounded_insight_error": "Grounded summary request failed. Please try again.",
         "structured_evidence_title": "Parsed structure from excerpts",
         "structured_evidence_hint": "Preview only. This list is heuristically parsed from retrieved excerpts and does not yet include citation jumps.",
+        "structured_evidence_refs_label": "Refs",
+        "structured_evidence_source_label": "Source",
         "grounded_insight_sources_heading": "Sources",
         "grounded_insight_preview_heading": "Excerpt preview",
         "grounded_insight_preview_hint": "Click a citation in the summary, or a source card, to preview the full excerpt.",
