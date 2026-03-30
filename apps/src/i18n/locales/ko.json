@@ -301,7 +301,7 @@
         "grounded_insight_regenerate": "아래 질문으로 다시 생성",
         "grounded_insight_error": "근거 요약 요청에 실패했습니다. 잠시 후 다시 시도하세요.",
         "structured_evidence_title": "발췌 기반 구조 미리보기",
-        "structured_evidence_hint": "미리보기 전용입니다. 검색된 발췌문을 휴리스틱하게 파싱한 결과이며, 아직 인용 점프는 제공하지 않습니다.",
+        "structured_evidence_hint": "미리보기 전용입니다. 검색된 발췌문과 facts 결과를 정리한 목록이며, 빠른 추적을 위한 ref와 출처 파일을 함께 제공합니다.",
         "structured_evidence_refs_label": "근거",
         "structured_evidence_source_label": "출처",
         "grounded_insight_sources_heading": "출처",

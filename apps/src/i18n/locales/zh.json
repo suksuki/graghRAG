@@ -301,7 +301,7 @@
         "grounded_insight_regenerate": "按下方问题重新生成",
         "grounded_insight_error": "有据摘要请求失败，请稍后重试。",
         "structured_evidence_title": "片段解析结构预览",
-        "structured_evidence_hint": "仅供预览。该列表由检索片段启发式解析生成，暂未提供引用跳转。",
+        "structured_evidence_hint": "仅供预览。该列表由检索片段与事实结果整理生成，并附带引用编号和来源文件，便于快速回溯。",
         "structured_evidence_refs_label": "引用",
         "structured_evidence_source_label": "来源",
         "grounded_insight_sources_heading": "来源",

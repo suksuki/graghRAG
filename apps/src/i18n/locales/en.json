@@ -301,7 +301,7 @@
         "grounded_insight_regenerate": "Regenerate with question below",
         "grounded_insight_error": "Grounded summary request failed. Please try again.",
         "structured_evidence_title": "Parsed structure from excerpts",
-        "structured_evidence_hint": "Preview only. This list is heuristically parsed from retrieved excerpts and does not yet include citation jumps.",
+        "structured_evidence_hint": "Preview only. This list is derived from retrieved excerpts and facts, with refs and source files for quick trace-back.",
         "structured_evidence_refs_label": "Refs",
         "structured_evidence_source_label": "Source",
         "grounded_insight_sources_heading": "Sources",
