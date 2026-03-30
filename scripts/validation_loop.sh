@@ -19,11 +19,12 @@ while true; do
     LAST_OUTPUT="$CURRENT_OUTPUT"
   fi
 
-  READY="$(python3 - <<'PY'
+  READY="$(python3 - "$REPORT_FILE" <<'PY'
 import json
+import sys
 from pathlib import Path
 
-p = Path("/tmp/validation.json")
+p = Path(sys.argv[1])
 try:
     data = json.loads(p.read_text(encoding="utf-8"))
     print(str(bool(data.get("ready_for_decision", False))).lower())
