@@ -388,7 +388,9 @@ def main() -> None:
     args = parser.parse_args()
 
     stats = _fetch_stats(args.days)
+    generated_at = datetime.now(timezone.utc).isoformat()
     result = {
+        "generated_at": generated_at,
         "total_queries": stats.total_queries,
         "total_sessions": stats.total_sessions,
         "real_user_ratio": stats.real_user_ratio,

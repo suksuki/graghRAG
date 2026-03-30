@@ -2,8 +2,14 @@
 
 set -euo pipefail
 
-REPORT_FILE="/tmp/validation.json"
+REPORT_FILE="$(mktemp /tmp/validation.XXXXXX.json)"
 LAST_OUTPUT=""
+
+cleanup() {
+  rm -f "$REPORT_FILE"
+}
+
+trap cleanup EXIT
 
 while true; do
   python3 "scripts/generate_insight_weekly_report.py" --days 7 > "$REPORT_FILE"
