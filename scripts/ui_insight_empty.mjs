@@ -1,5 +1,6 @@
 import {
   assert,
+  buildInsightPayload,
   getHeadless,
   openInsightPage,
   printResult,
@@ -8,18 +9,12 @@ import {
   withBrowser,
 } from './playwright_helpers.mjs';
 
-const payload = {
+const payload = buildInsightPayload({
   answer: 'No structured result.',
   summary: 'No structured result.',
   source: 'rag',
-  key_entities: [],
-  key_relations: [],
-  supporting_chunks: [],
-  structured_evidence: [],
   insufficient_evidence: true,
-  decision: { conflicts: [], support_groups: null },
-  debug: {},
-};
+});
 
 const result = await withBrowser(
   async (page) => {

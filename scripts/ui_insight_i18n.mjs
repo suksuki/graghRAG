@@ -1,5 +1,6 @@
 import {
   assert,
+  buildInsightPayload,
   getHeadless,
   openInsightPage,
   printResult,
@@ -8,7 +9,7 @@ import {
   withBrowser,
 } from './playwright_helpers.mjs';
 
-const payload = {
+const payload = buildInsightPayload({
   answer: 'Li Jingli is the product lead.[1]',
   summary: 'Li Jingli is the product lead.[1]',
   source: 'facts',
@@ -32,10 +33,7 @@ const payload = {
       file_names: ['person_extract_smoke_zh.txt'],
     },
   ],
-  insufficient_evidence: false,
-  decision: { conflicts: [], support_groups: null },
-  debug: {},
-};
+});
 
 const result = await withBrowser(
   async (page) => {

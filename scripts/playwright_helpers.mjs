@@ -41,6 +41,22 @@ export async function routeInsightResponse(page, payload) {
   });
 }
 
+export function buildInsightPayload(overrides = {}) {
+  return {
+    answer: '',
+    summary: '',
+    source: 'rag',
+    key_entities: [],
+    key_relations: [],
+    supporting_chunks: [],
+    structured_evidence: [],
+    insufficient_evidence: false,
+    decision: { conflicts: [], support_groups: null },
+    debug: {},
+    ...overrides,
+  };
+}
+
 export function printResult(name, result) {
   console.log(JSON.stringify({ check: name, ok: true, ...result }, null, 2));
 }
