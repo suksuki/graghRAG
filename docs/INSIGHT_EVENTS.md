@@ -167,7 +167,9 @@ ORDER BY ts ASC;
 当前 `friction_v3_candidates` 为 JSONL（`data/logs/friction_v3_candidates.jsonl`），不是 PG 表。
 若后续要做纯 SQL 聚合，建议先建表并在 controller 里同步写入。
 
-## Agentic Retrieval 验证 SQL（v1）
+## 历史参考 SQL（旧口径，仅用于回看）
+
+> 以下 SQL 保留为早期 Agentic Retrieval 验证参考。当前周报与决策门控以“查询窗口 / 选择后转化”口径为准，不再以 session 级点击率作为主判断依据。
 
 ### 1) `[n]` 点击率（session 口径）
 
@@ -180,6 +182,12 @@ FROM insight_events;
 ```
 
 ## 系统验证期每日指标 SQL（Observation Mode）
+
+> 当前每日观测与周报主口径说明：
+>
+> - `click_rate` 仍是全局查询级参考值，用于快速观察是否有人进入证据。
+> - Doc Scope 转化使用 `select_doc_scope -> query_with_doc_scope` 的选择窗口口径。
+> - scoped / global 对比使用 query-window attribution，不再使用 session 级归因。
 
 ### 1) click_rate（证据点击率）
 
@@ -315,7 +323,7 @@ SELECT
 FROM attributed;
 ```
 
-### 补充参考口径 A) 追问率（session 口径）
+### 补充参考口径 A) 追问率（session 口径，非主门控）
 
 ```sql
 SELECT
@@ -325,7 +333,7 @@ SELECT
 FROM insight_events;
 ```
 
-### 补充参考口径 B) 未命中率（answer 口径）
+### 补充参考口径 B) 未命中率（answer 口径，非主门控）
 
 ```sql
 SELECT

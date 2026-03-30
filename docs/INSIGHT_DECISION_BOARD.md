@@ -256,12 +256,14 @@ _____
 - 样本量（session）：`2`
 - 采样门槛：`query_submitted>=50 && session>=20 && real_user_ratio>=0.8`
 - 就绪状态：`false`
+- 口径说明：`total_queries` / `total_sessions` 为真实 session 口径；`real_user_ratio` 反映真实 session 占全部 session 的比例；以 `generated_at` 最新快照为准。
 
 ```json
 {
+  "generated_at": "2026-03-30T09:09:04.457605+00:00",
   "total_queries": 30,
   "total_sessions": 2,
-  "real_user_ratio": 1.0,
+  "real_user_ratio": 0.09090909090909091,
   "ready_for_decision": false,
   "click_rate": 0.03333333333333333,
   "follow_up_rate": 1.0,
