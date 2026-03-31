@@ -14,8 +14,8 @@ on:
         type: boolean
 
 jobs:
-  unit-tests:
-    name: Unit Tests (Hosted)
+  unit-and-contract-tests:
+    name: Unit + Contract Tests (Hosted)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -35,6 +35,17 @@ jobs:
       - name: Run unit tests
         run: |
           pytest -v tests/test_utils.py
+
+      - name: Run contract / regression tests
+        run: |
+          pytest -v \
+            tests/test_document_loader.py \
+            tests/test_evidence_conflicts.py \
+            tests/test_friction_v3.py \
+            tests/test_multilingual_graph_query.py \
+            tests/test_person_entities.py \
+            tests/test_ppt_summary_route.py \
+            tests/test_query_pipeline_contract.py
 
   full-stack-tests:
     name: Full Stack Tests (Self-Hosted)

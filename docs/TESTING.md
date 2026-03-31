@@ -14,6 +14,8 @@
 | `test_document_loader.py` | 单元 | `core/document_loader`：按扩展名分发、HTML 剥离、`.doc` 转换与回退 |
 | `test_multilingual_graph_query.py` | 单元 | 多语言检测、precompute key、建议问题、query_controller 语言偏好等 |
 | `test_query_pipeline_contract.py` | 契约 | 流式 `done` 中 `graph` / `debug` 字段形状与 canonical entity 链路 |
+| `test_ppt_summary_route.py` | 单元 / 契约 | 文档洞察 RAG path、planner fallback、`structured_evidence` provenance |
+| `test_person_entities.py` | 单元 | facts short-circuit 与人员结构抽取 |
 | `test_engines.py` | 集成（`integration`） | `GraphEngine` / `VectorEngine` / `SMEIngestor` 初始化与图查询引擎 |
 | `test_api.py` | API + 少量集成 | `TestClient` 走真实 HTTP；含 Ollama 直连与 `/settings/test` |
 | `test_integration.py` | 端到端 | `test_full_ingestion_and_query_flow`：上传 → 摄取 → `/query` |
@@ -216,7 +218,27 @@ pytest -v tests/test_api.py tests/test_engines.py
 pytest -v tests/test_integration.py
 ```
 
-### 4.5 关键断言（当前版本）
+### 4.5 快速发布验收 / 自动化入口
+
+```bash
+# Makefile 封装
+make test-unit
+make test-contract
+make test-smoke
+make test-load
+make test-ui
+make release-check
+```
+
+说明：
+
+- `make test-contract`：跑快速契约 / 回归测试，不要求完整外部栈。
+- `make test-smoke`：命中 `/`、`/settings`、`/knowledge/search`、`/api/v1/hybrid-search`、`/api/v1/insights/document`。
+- `make test-load`：并发压测核心 API，输出按 endpoint 聚合的失败数、P50、P95、max latency。
+- `make test-ui`：运行 Playwright 的结构化证据 UI 套件（需前端 dev server 已启动）。
+- `make release-check`：适合版本收尾，串联 `unit + contract + smoke`。
+
+### 4.6 关键断言（当前版本）
 
 建议在新增回归用例时覆盖以下契约：
 
@@ -230,7 +252,7 @@ pytest -v tests/test_integration.py
 - **Insight**：`supporting_chunks[].ref_index` 与摘要中 `[n]` 引用一一对应（由 `document_insight_service` 与 schema 保证；API 测试在有条目时校验 `ref_index`）。
 - **知识库路径**：仅断言 `/knowledge/*`，避免与 OpenAPI UI 的 `/docs` 混淆。
 
-### 4.6 最近一次全量结果（仓库内）
+### 4.7 最近一次全量结果（仓库内）
 
 ```bash
 PYTHONPATH=. python3 -m pytest -v -ra
@@ -244,12 +266,22 @@ PYTHONPATH=. python3 -m pytest -v -ra
 仓库已新增 GitHub Actions 工作流：`.github/workflows/tests.yml`。
 
 - **默认（push / pull_request）**：
-  - 执行 `unit-tests`（Hosted runner）
-  - 命令：`pytest -v tests/test_utils.py`
+  - 执行 `unit + contract tests`（Hosted runner）
+  - 命令：
+    - `pytest -v tests/test_utils.py`
+    - `pytest -v tests/test_document_loader.py tests/test_evidence_conflicts.py tests/test_friction_v3.py tests/test_multilingual_graph_query.py tests/test_person_entities.py tests/test_ppt_summary_route.py tests/test_query_pipeline_contract.py`
 - **手动触发全量（workflow_dispatch）**：
   - 勾选 `run_full_stack=true`
   - 执行 `full-stack-tests`（Self-hosted runner）
   - 命令：`pytest -v -ra`
+
+补充：
+
+- 本地版本收尾建议额外执行：
+  - `make test-contract`
+  - `make test-smoke`
+  - `make test-load`
+  - `make test-ui`
 
 说明：
 

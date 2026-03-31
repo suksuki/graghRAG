@@ -155,6 +155,21 @@ pytest -v
 
 # 仅单元测试
 pytest -v tests/test_utils.py
+
+# 快速契约 / 回归测试（不依赖完整外部栈）
+make test-contract
+
+# API smoke（要求本地 API 已启动）
+make test-smoke
+
+# API 压力测试（要求本地 API 已启动）
+make test-load
+
+# 浏览器 UI 回归（要求前端 dev server 已启动）
+make test-ui
+
+# 发布前快速验收（unit + contract + smoke）
+make release-check
 ```
 
 或使用 Makefile（若可用）：
@@ -168,8 +183,11 @@ make test-integration
 ### 测试内容
 
 - **单元测试**：验证安全工具函数、路径解析、配置逻辑等。
+- **契约 / 回归测试**：验证 QueryPipeline、文档洞察、结构化证据、摩擦分析等稳定输出。
 - **引擎与 API 测试**：验证 GraphEngine / VectorEngine / API 路由的基本行为。
 - **端到端回归测试**：`tests/test_integration.py::test_full_ingestion_and_query_flow`，覆盖「上传 → 摄取 → 查询」完整链路。
+- **浏览器 UI 回归**：`scripts/ui:insight-*` 覆盖结构化证据命中、空态、英文文案。
+- **Smoke / Load**：`scripts/release_smoke.py` 与 `scripts/load_test_api.py` 用于版本收尾与压力验证。
 
 测试环境清理与更多细节见：`docs/TESTING.md`。
 

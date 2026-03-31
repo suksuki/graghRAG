@@ -2,7 +2,8 @@
   "scripts": {
     "ui:insight-structured": "node ui_insight_structured.mjs",
     "ui:insight-empty": "node ui_insight_empty.mjs",
-    "ui:insight-i18n": "node ui_insight_i18n.mjs"
+    "ui:insight-i18n": "node ui_insight_i18n.mjs",
+    "ui:insight-suite": "npm run ui:insight-structured && npm run ui:insight-empty && npm run ui:insight-i18n"
   },
   "devDependencies": {
     "playwright": "^1.58.2"
