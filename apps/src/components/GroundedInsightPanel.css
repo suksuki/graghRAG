@@ -70,17 +70,17 @@
 }
 
 .grounded-insight {
-    --grounded-accent: #2563eb;
-    --grounded-accent-soft: rgba(37, 99, 235, 0.35);
-    --grounded-surface: rgba(15, 23, 42, 0.75);
-    --grounded-border: rgba(99, 102, 241, 0.22);
-    --grounded-muted: #94a3b8;
+    --grounded-accent: #7aa2c9;
+    --grounded-accent-soft: rgba(122, 162, 201, 0.2);
+    --grounded-surface: rgba(24, 27, 31, 0.92);
+    --grounded-border: rgba(126, 137, 147, 0.18);
+    --grounded-muted: var(--text-muted);
     position: relative;
     border-radius: 14px;
     border: 1px solid var(--grounded-border);
     background: var(--grounded-surface);
     padding: 18px 18px 20px;
-    box-shadow: 0 4px 28px rgba(0, 0, 0, 0.22);
+    box-shadow: var(--shadow-soft);
 }
 
 .grounded-insight__badge {
@@ -96,22 +96,22 @@
 }
 
 .grounded-insight__badge--warn {
-    color: #fbbf24;
+    color: #d2a25d;
 }
 
 .grounded-insight__star-legend {
     margin: 0 0 10px;
     padding: 6px 10px;
     border-radius: 8px;
-    border: 1px solid rgba(251, 191, 36, 0.22);
-    background: rgba(251, 191, 36, 0.06);
+    border: 1px solid rgba(197, 139, 71, 0.18);
+    background: rgba(197, 139, 71, 0.06);
     font-size: 11px;
     line-height: 1.45;
-    color: #cbd5e1;
+    color: var(--text-soft);
 }
 
 .grounded-insight__star-legend-mark {
-    color: #fbbf24;
+    color: #d2a25d;
     font-weight: 700;
 }
 
@@ -125,15 +125,15 @@
     margin: 0 0 12px;
     padding: 10px 12px;
     border-radius: 10px;
-    border: 1px solid rgba(99, 102, 241, 0.24);
-    background: rgba(30, 41, 59, 0.38);
+    border: 1px solid rgba(126, 137, 147, 0.18);
+    background: rgba(31, 35, 40, 0.82);
 }
 
 .relation-block__title {
     font-size: 12px;
     font-weight: 700;
     letter-spacing: 0.04em;
-    color: #cbd5e1;
+    color: var(--text-soft);
     margin-bottom: 8px;
 }
 
@@ -162,7 +162,7 @@
     }
 
     35% {
-        box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.45), 0 0 20px rgba(37, 99, 235, 0.12);
+        box-shadow: 0 0 0 1px rgba(122, 162, 201, 0.3), 0 0 20px rgba(122, 162, 201, 0.08);
     }
 
     to {
@@ -181,14 +181,14 @@
 .grounded-insight__summary {
     font-size: 15px;
     line-height: 1.65;
-    color: #e2e8f0;
+    color: var(--text-soft);
     word-break: break-word;
 }
 
 .grounded-insight__structured {
     font-size: 15px;
     line-height: 1.65;
-    color: #e2e8f0;
+    color: var(--text-soft);
     word-break: break-word;
     display: flex;
     flex-direction: column;
@@ -205,7 +205,7 @@
     font-weight: 700;
     letter-spacing: 0.05em;
     text-transform: uppercase;
-    color: #cbd5e1;
+    color: var(--text-soft);
     font-family: var(--font-main, system-ui, sans-serif);
 }
 
@@ -220,18 +220,18 @@
 .grounded-insight__bullet {
     margin: 0;
     padding-left: 0.15em;
-    color: #e2e8f0;
+    color: var(--text);
 }
 
 /* 含摘要中首次 top 引用（[n★]）的列表项：句级弱强调 */
 .grounded-insight__bullet--top-evidence-line {
-    border-left: 2px solid rgba(245, 158, 11, 0.38);
+    border-left: 2px solid rgba(197, 139, 71, 0.42);
     padding-left: 10px;
     margin-left: 2px;
 }
 
 .grounded-insight__summary--plain.grounded-insight__summary--top-evidence-anchor {
-    border-left: 2px solid rgba(245, 158, 11, 0.32);
+    border-left: 2px solid rgba(197, 139, 71, 0.34);
     padding-left: 12px;
     margin-left: 2px;
 }
@@ -244,10 +244,10 @@
     margin: 0 0 12px;
     padding: 12px 14px;
     border-radius: 12px;
-    border: 1px solid rgba(99, 102, 241, 0.2);
+    border: 1px solid rgba(126, 137, 147, 0.18);
     background:
-        linear-gradient(180deg, rgba(37, 99, 235, 0.08), rgba(15, 23, 42, 0.28)),
-        rgba(30, 41, 59, 0.44);
+        linear-gradient(180deg, rgba(122, 162, 201, 0.05), rgba(17, 19, 21, 0.12)),
+        rgba(31, 35, 40, 0.88);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
@@ -255,7 +255,7 @@
     font-size: 12px;
     font-weight: 700;
     letter-spacing: 0.04em;
-    color: #cbd5e1;
+    color: var(--text-soft);
     margin-bottom: 4px;
 }
 
@@ -263,7 +263,7 @@
     margin: 0 0 8px;
     font-size: 12px;
     line-height: 1.45;
-    color: #94a3b8;
+    color: var(--text-muted);
 }
 
 .structured-evidence__list {
@@ -276,13 +276,13 @@
 }
 
 .structured-evidence__item {
-    color: #cbd5e1;
+    color: var(--text-soft);
     font-size: 13px;
     line-height: 1.5;
     padding: 10px 12px;
     border-radius: 10px;
-    border: 1px solid rgba(148, 163, 184, 0.12);
-    background: rgba(15, 23, 42, 0.34);
+    border: 1px solid rgba(126, 137, 147, 0.16);
+    background: rgba(22, 24, 27, 0.92);
 }
 
 .structured-evidence__line {
@@ -297,7 +297,7 @@
 }
 
 .structured-evidence__sep {
-    color: #94a3b8;
+    color: var(--text-muted);
 }
 
 .structured-evidence__meta {
@@ -319,8 +319,8 @@
 .structured-evidence__meta-label {
     padding: 2px 6px;
     border-radius: 999px;
-    background: rgba(51, 65, 85, 0.78);
-    color: #94a3b8;
+    background: rgba(56, 62, 68, 0.78);
+    color: var(--text-muted);
     font-size: 10px;
     font-weight: 700;
     letter-spacing: 0.04em;
@@ -335,13 +335,13 @@
 
 .structured-evidence__files {
     font-size: 12px;
-    color: #94a3b8;
+    color: var(--text-muted);
 }
 
 .structured-evidence__open {
-    border: 1px solid rgba(96, 165, 250, 0.28);
-    background: rgba(30, 41, 59, 0.62);
-    color: #93c5fd;
+    border: 1px solid rgba(122, 162, 201, 0.24);
+    background: rgba(26, 30, 34, 0.96);
+    color: var(--text-soft);
     cursor: pointer;
     padding: 4px 9px;
     border-radius: 999px;
@@ -352,9 +352,9 @@
 
 .structured-evidence__open:hover,
 .structured-evidence__open:focus-visible {
-    background: rgba(30, 64, 175, 0.24);
-    border-color: rgba(147, 197, 253, 0.52);
-    color: #dbeafe;
+    background: rgba(122, 162, 201, 0.12);
+    border-color: rgba(122, 162, 201, 0.4);
+    color: var(--text);
     outline: none;
 }
 
@@ -384,9 +384,9 @@
     border-radius: 8px;
     font-size: 12px;
     line-height: 1.45;
-    color: rgba(253, 224, 71, 0.95);
-    background: rgba(245, 158, 11, 0.07);
-    border: 1px solid rgba(251, 191, 36, 0.22);
+    color: #e4c495;
+    background: rgba(197, 139, 71, 0.08);
+    border: 1px solid rgba(197, 139, 71, 0.18);
 }
 
 /* Decision v2：冲突下的证据分桶（仅结构，不表示对错） */
@@ -394,11 +394,11 @@
     margin: 0 0 14px;
     padding: 10px 12px;
     border-radius: 8px;
-    border: 1px solid rgba(148, 163, 184, 0.18);
-    background: rgba(15, 23, 42, 0.35);
+    border: 1px solid rgba(126, 137, 147, 0.16);
+    background: rgba(22, 24, 27, 0.88);
     font-size: 12px;
     line-height: 1.5;
-    color: #cbd5e1;
+    color: var(--text-soft);
 }
 
 .grounded-insight__decision-groups__row {
@@ -417,7 +417,7 @@
     flex: 0 0 auto;
     max-width: 100%;
     font-weight: 600;
-    color: #94a3b8;
+    color: var(--text-muted);
 }
 
 .grounded-insight__decision-groups__refs {
@@ -437,11 +437,11 @@
     margin: 0 0 8px;
     padding: 6px 8px;
     border-radius: 6px;
-    background: rgba(245, 158, 11, 0.1);
-    border-left: 2px solid rgba(251, 191, 36, 0.38);
+    background: rgba(197, 139, 71, 0.08);
+    border-left: 2px solid rgba(197, 139, 71, 0.34);
     font-size: 11px;
     line-height: 1.45;
-    color: #fde68a;
+    color: #e4c495;
 }
 
 .grounded-insight__ref {
@@ -462,11 +462,11 @@
 .grounded-insight__ref:focus-visible {
     text-decoration: underline;
     outline: none;
-    background: rgba(37, 99, 235, 0.12);
+    background: rgba(122, 162, 201, 0.12);
 }
 
 .grounded-insight__ref--active {
-    background: rgba(37, 99, 235, 0.2);
+    background: rgba(122, 162, 201, 0.18);
     border-radius: 4px;
 }
 
@@ -478,7 +478,7 @@
 
 /* 本批按 score 排名第 1 的引用：摘要内弱提示（与来源区 #1 一致） */
 .grounded-insight__ref--top {
-    color: #93c5fd;
+    color: #a8c4dd;
 }
 
 .grounded-insight__ref-top-mark {
@@ -486,8 +486,8 @@
     margin-left: 0.5px;
     font-size: 0.82em;
     font-weight: 700;
-    color: #fbbf24;
-    text-shadow: 0 0 10px rgba(251, 191, 36, 0.35);
+    color: #d2a25d;
+    text-shadow: 0 0 10px rgba(197, 139, 71, 0.24);
     vertical-align: 0.05em;
 }
 

@@ -118,12 +118,6 @@ export default function InsightPage() {
                     />
                 ) : null}
             </section>
-
-            <p className="insight-page__corpus-bridge" role="note">
-                {t('insight_page_corpus_bridge')}
-            </p>
-            <div className="insight-page__divider" />
-
             <CorpusInsightPanel variant="page" topKDocs={20} />
         </div>
     );

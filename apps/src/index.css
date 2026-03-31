@@ -1,14 +1,20 @@
 :root {
-  --primary: #6366f1;
-  --primary-glow: rgba(99, 102, 241, 0.4);
-  --bg: #0f172a;
-  --card-bg: rgba(30, 41, 59, 0.7);
-  --border: rgba(255, 255, 255, 0.1);
-  --text: #f8fafc;
-  --text-muted: #94a3b8;
-  --accent: #10b981;
-  --font-main: 'Inter', system-ui, -apple-system, sans-serif;
-  --font-display: 'Outfit', sans-serif;
+  --primary: #7aa2c9;
+  --primary-glow: rgba(122, 162, 201, 0.18);
+  --accent: #c58b47;
+  --accent-soft: rgba(197, 139, 71, 0.16);
+  --bg: #111315;
+  --bg-elevated: #171a1d;
+  --panel-bg: rgba(24, 27, 31, 0.92);
+  --card-bg: rgba(31, 35, 40, 0.9);
+  --border: rgba(126, 137, 147, 0.18);
+  --border-strong: rgba(126, 137, 147, 0.34);
+  --text: #edf1f4;
+  --text-soft: #c8d0d7;
+  --text-muted: #8f98a1;
+  --font-main: 'IBM Plex Sans', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-display: 'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif;
+  --shadow-soft: 0 14px 40px rgba(0, 0, 0, 0.24);
 }
 
 * {
@@ -19,23 +25,26 @@
 
 body {
   background: var(--bg);
-  background: radial-gradient(circle at top right, #1e293b, #0f172a);
+  background-image:
+    radial-gradient(circle at top left, rgba(122, 162, 201, 0.07), transparent 34%),
+    linear-gradient(180deg, #14171a 0%, #101214 100%);
   color: var(--text);
   font-family: var(--font-main);
   min-height: 100vh;
   overflow-x: hidden;
+  letter-spacing: 0.01em;
 }
 
 h1, h2, h3 {
   font-family: var(--font-display);
+  letter-spacing: -0.02em;
 }
 
 .glass {
   background: var(--card-bg);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: 14px;
+  box-shadow: var(--shadow-soft);
 }
 
 input, button {

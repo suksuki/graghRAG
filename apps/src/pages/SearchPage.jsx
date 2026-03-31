@@ -204,8 +204,6 @@ export default function SearchPage() {
 
     return (
         <div className="search-page">
-            <p className="search-page__kicker">{t('search_page_kicker')}</p>
-
             <form className="search-page__form" onSubmit={onSubmit}>
                 <input
                     ref={fileInputRef}

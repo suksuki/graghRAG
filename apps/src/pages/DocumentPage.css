@@ -1,12 +1,11 @@
 /* 文档列表 /documents — 暗色 + 卡片 */
 .document-page {
-    --dp-bg: #0b0e14;
-    --dp-card: rgba(15, 23, 42, 0.75);
-    --dp-border: rgba(99, 102, 241, 0.2);
-    --dp-muted: #94a3b8;
+    --dp-card: rgba(27, 30, 34, 0.92);
+    --dp-border: rgba(126, 137, 147, 0.18);
+    --dp-muted: var(--text-muted);
     max-width: 1100px;
     margin: 0 auto;
-    padding: 20px 20px 32px;
+    padding: 24px 24px 36px;
     min-height: 100%;
 }
 
@@ -23,9 +22,9 @@
 }
 
 .document-page__title {
-    font-size: 22px;
+    font-size: 24px;
     font-weight: 700;
-    color: #f8fafc;
+    color: var(--text);
     margin: 0 0 6px;
 }
 
@@ -41,8 +40,8 @@
 .document-page__fold-system {
     margin-bottom: 20px;
     border-radius: 12px;
-    border: 1px solid rgba(51, 65, 85, 0.5);
-    background: rgba(15, 23, 42, 0.4);
+    border: 1px solid var(--dp-border);
+    background: rgba(24, 27, 31, 0.8);
     overflow: hidden;
 }
 
@@ -114,27 +113,28 @@
     flex-shrink: 0;
     padding: 10px 18px;
     border-radius: 10px;
-    background: linear-gradient(180deg, #6366f1 0%, #4f46e5 100%);
-    color: #f8fafc;
+    border: 1px solid rgba(122, 162, 201, 0.34);
+    background: linear-gradient(180deg, #2f465d 0%, #223446 100%);
+    color: var(--text);
     font-size: 13px;
     font-weight: 600;
     cursor: pointer;
     border: none;
-    box-shadow: 0 2px 14px rgba(79, 70, 229, 0.35);
+    box-shadow: var(--shadow-soft);
     transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
     user-select: none;
 }
 
 .document-page__upload-primary:hover {
     transform: translateY(-1px);
-    box-shadow: 0 4px 18px rgba(99, 102, 241, 0.45);
+    box-shadow: 0 18px 34px rgba(0, 0, 0, 0.22);
 }
 
 .document-page__upload-primary:has(input:disabled) {
     opacity: 0.8;
     cursor: wait;
     transform: none;
-    box-shadow: 0 2px 10px rgba(79, 70, 229, 0.25);
+    box-shadow: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -151,9 +151,9 @@
     max-width: 360px;
     padding: 10px 14px;
     border-radius: 10px;
-    border: 1px solid rgba(51, 65, 85, 0.6);
-    background: rgba(15, 23, 42, 0.6);
-    color: #e2e8f0;
+    border: 1px solid var(--dp-border);
+    background: rgba(17, 19, 21, 0.9);
+    color: var(--text);
     font-size: 13px;
     outline: none;
 }
@@ -165,9 +165,9 @@
 .document-page__sort {
     padding: 9px 12px;
     border-radius: 10px;
-    border: 1px solid rgba(51, 65, 85, 0.6);
-    background: rgba(15, 23, 42, 0.8);
-    color: #e2e8f0;
+    border: 1px solid var(--dp-border);
+    background: rgba(17, 19, 21, 0.94);
+    color: var(--text);
     font-size: 12px;
     cursor: pointer;
 }
@@ -199,7 +199,7 @@
     padding: 0;
     border: none;
     border-radius: 10px;
-    background: rgba(15, 23, 42, 0.65);
+    background: rgba(23, 26, 29, 0.96);
     color: #cbd5e1;
     cursor: pointer;
     transition: background 0.15s ease, color 0.15s ease;
@@ -219,8 +219,8 @@
     min-width: 140px;
     padding: 6px;
     border-radius: 10px;
-    background: rgba(15, 23, 42, 0.98);
-    border: 1px solid rgba(51, 65, 85, 0.75);
+    background: rgba(20, 23, 26, 0.98);
+    border: 1px solid var(--dp-border);
     box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
 }
 
@@ -240,7 +240,7 @@
 
 .document-page__card-dropdown-item:hover,
 .document-page__card-dropdown-item:focus-visible {
-    background: rgba(51, 65, 85, 0.5);
+    background: rgba(122, 162, 201, 0.08);
     outline: none;
 }
 
@@ -260,7 +260,7 @@
     padding: 11px 36px 11px 12px;
     border-radius: 12px;
     background: var(--dp-card);
-    border: 1px solid rgba(51, 65, 85, 0.45);
+    border: 1px solid var(--dp-border);
     border-left: 3px solid transparent;
     cursor: pointer;
     transition:
@@ -281,8 +281,8 @@
 
 .document-page__card:hover,
 .document-page__card:focus-visible {
-    border-color: rgba(99, 102, 241, 0.35);
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.22);
+    border-color: rgba(122, 162, 201, 0.38);
+    box-shadow: var(--shadow-soft);
     outline: none;
 }
 
@@ -319,10 +319,10 @@
 }
 
 .document-page__card--active {
-    border-color: rgba(129, 140, 248, 0.4);
-    border-left-color: var(--primary, #6366f1);
-    background: rgba(99, 102, 241, 0.08);
-    box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.35);
+    border-color: rgba(122, 162, 201, 0.4);
+    border-left-color: var(--primary, #7aa2c9);
+    background: rgba(122, 162, 201, 0.08);
+    box-shadow: 0 0 0 1px rgba(122, 162, 201, 0.2);
 }
 
 .document-page__card-head-row {
@@ -335,7 +335,7 @@
 .document-page__card-icon {
     flex-shrink: 0;
     margin-top: 2px;
-    color: #818cf8;
+    color: var(--primary);
 }
 
 .document-page__card-title-text {
@@ -344,7 +344,7 @@
     font-weight: 600;
     font-size: 13px;
     line-height: 1.35;
-    color: #f1f5f9;
+    color: var(--text);
     word-break: break-word;
     display: -webkit-box;
     -webkit-line-clamp: 2;
@@ -403,7 +403,7 @@
     font-weight: 700;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-    color: #a5b4fc;
+    color: var(--primary);
     max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -430,9 +430,9 @@
     text-transform: uppercase;
     padding: 3px 8px;
     border-radius: 6px;
-    background: rgba(99, 102, 241, 0.2);
-    border: 1px solid rgba(129, 140, 248, 0.35);
-    color: #c4b5fd;
+    background: rgba(122, 162, 201, 0.12);
+    border: 1px solid rgba(122, 162, 201, 0.24);
+    color: var(--text-soft);
 }
 
 .document-page__card-keywords {
@@ -445,9 +445,9 @@
     font-size: 11px;
     padding: 2px 8px;
     border-radius: 6px;
-    background: rgba(59, 130, 246, 0.12);
-    border: 1px solid rgba(59, 130, 246, 0.28);
-    color: #93c5fd;
+    background: rgba(122, 162, 201, 0.08);
+    border: 1px solid rgba(122, 162, 201, 0.22);
+    color: var(--text-soft);
 }
 
 .document-page__card-summary {
@@ -470,9 +470,9 @@
     font-size: 11px;
     padding: 2px 8px;
     border-radius: 999px;
-    background: rgba(16, 185, 129, 0.12);
-    border: 1px solid rgba(16, 185, 129, 0.25);
-    color: #a7f3d0;
+    background: rgba(197, 139, 71, 0.08);
+    border: 1px solid rgba(197, 139, 71, 0.2);
+    color: #dfc09a;
 }
 
 .document-page__skeleton {

@@ -1,23 +1,15 @@
 /* Search 页：暗色底 + 紫强调，贴近设计稿 */
 .search-page {
-    --search-bg: #0b0e14;
-    --search-card: rgba(15, 23, 42, 0.72);
-    --search-border: rgba(99, 102, 241, 0.22);
-    --search-accent: #a5b4fc;
-    --search-highlight: #c4b5fd;
-    --search-muted: #94a3b8;
+    --search-card: rgba(27, 30, 34, 0.9);
+    --search-border: rgba(126, 137, 147, 0.18);
+    --search-border-strong: rgba(126, 137, 147, 0.3);
+    --search-accent: #7aa2c9;
+    --search-highlight: #d8b279;
+    --search-muted: var(--text-muted);
     min-height: 100%;
-    max-width: 960px;
+    max-width: 1040px;
     margin: 0 auto;
-    padding: 20px 20px 32px;
-}
-
-.search-page__kicker {
-    font-size: 11px;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--search-muted);
-    margin-bottom: 10px;
+    padding: 24px 24px 36px;
 }
 
 .search-page__form {
@@ -25,11 +17,11 @@
     gap: 10px;
     align-items: stretch;
     margin-bottom: 12px;
-    padding: 6px 8px 6px 10px;
-    border-radius: 12px;
+    padding: 8px 10px 8px 12px;
+    border-radius: 14px;
     background: var(--search-card);
     border: 1px solid var(--search-border);
-    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
+    box-shadow: var(--shadow-soft);
 }
 
 .search-page__file-input {
@@ -45,20 +37,20 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 44px;
+    width: 42px;
     margin: 4px 0;
     padding: 0;
-    border: 1px solid rgba(99, 102, 241, 0.35);
+    border: 1px solid var(--search-border);
     border-radius: 10px;
-    background: rgba(30, 27, 75, 0.35);
+    background: rgba(255, 255, 255, 0.03);
     color: var(--search-accent);
     cursor: pointer;
     transition: border-color 0.15s, background 0.15s;
 }
 
 .search-page__attach:hover:not(:disabled) {
-    border-color: rgba(129, 140, 248, 0.55);
-    background: rgba(49, 46, 129, 0.45);
+    border-color: rgba(122, 162, 201, 0.45);
+    background: rgba(122, 162, 201, 0.08);
 }
 
 .search-page__attach:disabled {
@@ -70,7 +62,7 @@
     margin: 0 0 12px;
     padding: 10px 12px;
     border-radius: 8px;
-    background: rgba(127, 29, 29, 0.35);
+    background: rgba(96, 30, 30, 0.32);
     border: 1px solid rgba(248, 113, 113, 0.35);
     color: #fecaca;
     font-size: 13px;
@@ -96,10 +88,10 @@
     margin-bottom: 20px;
     padding: 10px 14px;
     border-radius: 10px;
-    background: rgba(30, 27, 75, 0.4);
-    border: 1px solid rgba(99, 102, 241, 0.28);
+    background: rgba(28, 31, 35, 0.9);
+    border: 1px solid var(--search-border);
     font-size: 13px;
-    color: #e2e8f0;
+    color: var(--text-soft);
 }
 
 .search-page__scope-bar-icon {
@@ -127,12 +119,12 @@
 }
 
 .search-page__scope-clear:hover {
-    color: #e2e8f0;
+    color: var(--text);
 }
 
 .search-page__form:focus-within {
-    border-color: rgba(129, 140, 248, 0.45);
-    box-shadow: 0 0 0 1px rgba(129, 140, 248, 0.2);
+    border-color: rgba(122, 162, 201, 0.42);
+    box-shadow: 0 0 0 1px rgba(122, 162, 201, 0.12);
 }
 
 .search-page__input-wrap {
@@ -154,7 +146,7 @@
     min-width: 0;
     border: none;
     background: transparent;
-    color: #f1f5f9;
+    color: var(--text);
     font-size: 15px;
     outline: none;
     padding: 12px 4px;
@@ -172,8 +164,9 @@
     padding: 0 20px;
     border-radius: 10px;
     border: none;
-    background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
-    color: #fff;
+    border: 1px solid rgba(122, 162, 201, 0.36);
+    background: linear-gradient(180deg, #2f465d 0%, #233547 100%);
+    color: #eef4f8;
     font-weight: 600;
     font-size: 13px;
     cursor: pointer;
@@ -181,7 +174,7 @@
 }
 
 .search-page__submit:hover:not(:disabled) {
-    opacity: 0.95;
+    background: linear-gradient(180deg, #38536e 0%, #294055 100%);
     transform: translateY(-1px);
 }
 
@@ -219,9 +212,9 @@
     gap: 8px;
     padding: 8px 16px;
     border-radius: 10px;
-    border: 1px solid rgba(37, 99, 235, 0.45);
-    background: rgba(37, 99, 235, 0.18);
-    color: #bfdbfe;
+    border: 1px solid rgba(122, 162, 201, 0.32);
+    background: rgba(122, 162, 201, 0.08);
+    color: var(--text-soft);
     font-size: 13px;
     font-weight: 600;
     cursor: pointer;
@@ -229,8 +222,8 @@
 }
 
 .search-page__grounded-btn:hover:not(:disabled) {
-    background: rgba(37, 99, 235, 0.28);
-    border-color: rgba(96, 165, 250, 0.55);
+    background: rgba(122, 162, 201, 0.14);
+    border-color: rgba(122, 162, 201, 0.48);
 }
 
 .search-page__grounded-btn:disabled {
@@ -239,16 +232,16 @@
 }
 
 .search-page__grounded-btn--ghost {
-    border-color: rgba(148, 163, 184, 0.35);
-    background: rgba(30, 41, 59, 0.5);
-    color: #cbd5e1;
+    border-color: var(--search-border);
+    background: rgba(255, 255, 255, 0.025);
+    color: var(--text-soft);
     font-size: 12px;
     padding: 6px 12px;
 }
 
 .search-page__grounded-btn--ghost:hover:not(:disabled) {
-    border-color: rgba(129, 140, 248, 0.4);
-    background: rgba(51, 65, 85, 0.45);
+    border-color: rgba(122, 162, 201, 0.34);
+    background: rgba(122, 162, 201, 0.08);
 }
 
 .search-page__grounded-loading {
@@ -258,7 +251,7 @@
     padding: 20px 16px;
     margin-bottom: 12px;
     border-radius: 12px;
-    border: 1px dashed rgba(99, 102, 241, 0.28);
+    border: 1px dashed var(--search-border-strong);
     color: var(--search-muted);
     font-size: 13px;
 }
@@ -306,9 +299,9 @@
     text-align: left;
     width: 100%;
     padding: 18px 20px;
-    border-radius: 14px;
+    border-radius: 12px;
     background: var(--search-card);
-    border: 1px solid rgba(51, 65, 85, 0.5);
+    border: 1px solid var(--search-border);
     cursor: pointer;
     transition: border-color 0.2s, box-shadow 0.2s, transform 0.18s ease;
     color: inherit;
@@ -316,9 +309,9 @@
 }
 
 .search-page__card:hover {
-    border-color: rgba(129, 140, 248, 0.35);
-    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.2);
-    transform: scale(1.01);
+    border-color: rgba(122, 162, 201, 0.38);
+    box-shadow: var(--shadow-soft);
+    transform: translateY(-1px);
 }
 
 .search-page__card:active {
@@ -328,7 +321,7 @@
 .search-page__card-title {
     font-size: 17px;
     font-weight: 700;
-    color: #f8fafc;
+    color: var(--text);
     margin-bottom: 6px;
     line-height: 1.35;
     word-break: break-all;
@@ -337,7 +330,7 @@
 .search-page__card-meta {
     font-size: 12px;
     line-height: 1.4;
-    color: #94a3b8;
+    color: var(--search-muted);
     margin-bottom: 8px;
     letter-spacing: 0.02em;
 }
@@ -345,7 +338,7 @@
 .search-page__card-snippet {
     font-size: 14px;
     line-height: 1.55;
-    color: #cbd5e1;
+    color: var(--text-soft);
     display: -webkit-box;
     -webkit-line-clamp: 4;
     -webkit-box-orient: vertical;
@@ -355,7 +348,7 @@
 .search-page__highlight {
     color: var(--search-highlight);
     font-weight: 600;
-    background: rgba(99, 102, 241, 0.15);
+    background: rgba(197, 139, 71, 0.16);
     border-radius: 2px;
     padding: 0 2px;
 }
@@ -364,8 +357,8 @@
 .search-page__error {
     padding: 20px;
     border-radius: 12px;
-    background: rgba(15, 23, 42, 0.5);
-    border: 1px dashed rgba(71, 85, 105, 0.6);
+    background: rgba(24, 27, 31, 0.86);
+    border: 1px dashed var(--search-border-strong);
     color: var(--search-muted);
     font-size: 14px;
     text-align: center;
@@ -387,7 +380,7 @@
     padding: 18px 20px;
     border-radius: 14px;
     background: var(--search-card);
-    border: 1px solid rgba(51, 65, 85, 0.45);
+    border: 1px solid var(--search-border);
     overflow: hidden;
 }
 
@@ -396,9 +389,9 @@
     border-radius: 6px;
     background: linear-gradient(
         90deg,
-        rgba(51, 65, 85, 0.35) 0%,
-        rgba(71, 85, 105, 0.55) 50%,
-        rgba(51, 65, 85, 0.35) 100%
+        rgba(50, 56, 63, 0.35) 0%,
+        rgba(86, 95, 104, 0.5) 50%,
+        rgba(50, 56, 63, 0.35) 100%
     );
     background-size: 200% 100%;
     animation: search-skel-shimmer 1.2s ease-in-out infinite;
@@ -445,7 +438,7 @@
     margin: 0 0 10px;
     font-size: 16px;
     font-weight: 700;
-    color: #e2e8f0;
+    color: var(--text);
 }
 
 .search-page__empty-lead {
@@ -472,9 +465,9 @@
     justify-content: center;
     padding: 8px 16px;
     border-radius: 10px;
-    border: 1px solid rgba(129, 140, 248, 0.45);
-    background: rgba(99, 102, 241, 0.2);
-    color: #e0e7ff;
+    border: 1px solid rgba(122, 162, 201, 0.3);
+    background: rgba(122, 162, 201, 0.08);
+    color: var(--text);
     font-size: 13px;
     font-weight: 600;
     cursor: pointer;
@@ -482,6 +475,6 @@
 }
 
 .search-page__empty-cta:hover {
-    background: rgba(99, 102, 241, 0.32);
-    border-color: rgba(167, 139, 250, 0.55);
+    background: rgba(122, 162, 201, 0.16);
+    border-color: rgba(122, 162, 201, 0.46);
 }
